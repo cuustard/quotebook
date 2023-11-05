@@ -41,3 +41,7 @@ function validate_password(password) {
 function validate_username(username) {
 	return username.length > 3 && username.length < 16;
 }
+
+function add_quote() {
+	const quote = document.getElementById();
+}
