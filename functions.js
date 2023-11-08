@@ -42,6 +42,24 @@ function validate_username(username) {
 	return username.length > 3 && username.length < 16;
 }
 
-function add_quote() {
-	const quote = document.getElementById();
+function validate_quote() {
+	const quote = document.getElementById(quote).value;
+	const quotee = document.getElementById(quotee).value;
+	const quoteDate = document.getElementById(quoteDate).value;
+
+	if (validate_quote(email) && validate_quotee(password)) {
+		alert("Both are VALID");
+		return true;
+	} else {
+		alert("Quote and/or Quotee are INVALID");
+		return false;
+	}
+}
+
+function validate_quote(quote) {
+	return quote.length >= 1 && quote.length <= 1000;
+}
+
+function validate_quotee(quotee) {
+	return quotee.length >= 2 && quotee.length <= 50;
 }
