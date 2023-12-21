@@ -1,7 +1,7 @@
-{% extends "base.html" %} {% block title %}Sign Up{% endblock %} {% block
+{% extends "auth_base.html" %} {% block title %}Create Account{% endblock %} {% block
 content %}
 <h1>Create Account</h1>
-<form method="post" onsubmit="return create_account()">
+<form method="POST" action="/" onsubmit="return create_account()" autocomplete="on">
 	<div class="form-group">
         <label for="username">Username:</label>
         <input type="text" id="username" name="username" class="form-control" required />
@@ -17,6 +17,7 @@ content %}
         <input id="password" name="password" class="form-control" required />
     </div>
 
-	<button type="submit" class="btn btn-primary" value="Create Account" class="form-control" />Submit</button>
+	<button type="submit" class="btn btn-primary" value="Create Account" class="form-control"/>Submit</button>
+    <p>Already have an account? <a href="/login">Log In</a></p>
 </form>
 {% endblock %}

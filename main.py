@@ -1,67 +1,75 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Blueprint, render_template, request
+from flask import Flask
 from flask_mysqldb import MySQL
-
 from website import create_app
 
-from flask import Flask, render_template, request, redirect, url_for
-from flask_mysqldb import MySQL
-
-import hashlib
-
-app = Flask(__name__)
+# instantiate the app
+app = create_app()
 
 # Configure MySQL connection
 app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'your_username'
+app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'asyouwish'
-app.config['MYSQL_DATABASE'] = 'quotebook_database'
+app.config['MYSQL_DB'] = 'quotebook_database'
 
-mysql = MySQL(app)
+# Initialize a MySQL object
+mysqlObject = MySQL(app)
 
-@app.route('/')
+# views.py
+views = Blueprint('views', __name__)
+
+
+@app.route('/', methods=['GET', 'POST'])
 def home():
-    return render_template('home.html')
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        # Hash the password before storing
-        # password = # Use a secure hashing algorithm like bcrypt
-        
-        # Insert user into database
-        cursor = mysql.connection.cursor()
-        cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
-        mysql.connection.commit()
-        cursor.close()
-        
-        return redirect(url_for('login'))
-    return render_template('sign_up.html')
+        # Fetch form data
+        userDetails = request.form
+        username = userDetails['username']
+        email = userDetails['email']
+        password = userDetails['password']
+        cur = mysqlObject.connection.cursor()
+        cur.execute(
+            "INSERT INTO users(username, email, password) VALUES(%s, %s, %s)", (username, email, password))
+        mysqlObject.connection.commit()
+        cur.close()
+        return 'success'
+    return render_template("auth/create_account.html")
+
+
+@app.route('/test_db_connection')
+def test_db_connection():
+    try:
+        cur = mysqlObject.connection.cursor()
+        cur.execute("SELECT * FROM users")
+        result = cur.fetchall()
+        cur.close()
+        if result is None:
+            return "No data fetched. Something went wrong."
+        else:
+            return str(result)
+    except Exception as e:
+        return str(e)
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
+        email = request.form['email']
         password = request.form['password']
-        
-        # Fetch user from database
-        cursor = mysql.connection.cursor()
-        cursor.execute("SELECT * FROM users WHERE username=%s", (username,))
-        user = cursor.fetchone()
-        cursor.close()
-        
-        if user and verify_password(password, user['password']):
-            # User found and password correct - log them in (implement your session management here)
-            return redirect(url_for('profile'))
+        cur = mysqlObject.connection.cursor()
+        cur.execute(
+            "SELECT password FROM users WHERE email = %s", [email])
+        result = cur.fetchone()
+        cur.close()
+        if result is None:
+            flash("No user found with this username. Please create an account.", "info")
+        queriedPassword = result[0]
+        if password == queriedPassword:
+            return render_template("login.html")
         else:
-            return "Invalid username or password"
-    return render_template('login.html')
+            flash("Login unsuccessful.")
+    return render_template("auth/login.html")
 
-@app.route('/logout')
-def logout():
-    # Implement your session management logout logic here
-    return redirect(url_for('home'))
 
 if __name__ == '__main__':
     app.run(debug=True)
