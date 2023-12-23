@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>{% block title %}{% endblock %}</title>
+		<title>Quotebook - {% block title %}{% endblock %}</title>
 		<link
 			rel="stylesheet"
 			href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
@@ -28,13 +28,22 @@
 			</button>
 			<div class="collapse navbar-collapse" id="navbar">
 				<div class="navbar-nav">
-					<a class="nav-item nav-link" id="home" href="/quotebbok_list.html"
+					<a class="nav-item nav-link" id="Dashboard" href="/dashboard"
+						>My Dashboard</a
+					>
+					<a
+						class="nav-item nav-link"
+						id="quotebooks"
+						href="/quotebook_list"
 						>My Quotebooks</a
 					>
-					<a class="nav-item nav-link" id="login" href="/settings.html"
+					<a
+						class="nav-item nav-link"
+						id="login"
+						href="/user_settings"
 						>Settings</a
 					>
-					<a class="nav-item nav-link" id="logout" href="/"
+					<a class="nav-item nav-link" id="logout" href="/logout"
 						>Logout</a
 					>
 				</div>

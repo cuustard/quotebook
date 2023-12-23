@@ -1,24 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quotebook</title>
-    <!-- Add your CSS and JS files here -->
-</head>
-<body>
-    <h1>Welcome to Quotebook!</h1>
-    <section id="quotebooks">
-        <h2>Your Quotebooks</h2>
-        <ul id="quotebook-list">
-            <!-- Flask will populate this list with the quotebooks -->
-        </ul>
-    </section>
-    <section id="quotes">
-        <h2>Quotes in Selected Quotebook</h2>
-        <ul id="quote-list">
-            <!-- Flask will populate this list with the quotes from the selected quotebook -->
-        </ul>
-    </section>
-</body>
-</html>
+{% extends "dashboard_base.html" %} {% block title %}Dashboard{% endblock %} {% block
+content %}
+<h1>Welcome to Quotebook Dashboard!</h1>
+<p>section to add new quotes</p>
+<p>the currently selected quotebook</p>
+{% endblock %}
