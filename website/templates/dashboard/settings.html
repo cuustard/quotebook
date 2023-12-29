@@ -1,5 +1,24 @@
 {% extends "dashboard_base.html" %} {% block title %}My Settings{% endblock %}
 {% block content %}
 <h1>User Setttings</h1>
-<p>Settings</p>
+<form method="post" action="/user_settings">
+	<button
+		type="submit"
+		class="btn btn-primary"
+		value="deleteAccount"
+		name="deleteAccount"
+		class="form-control"
+		onclick="showPasswordInput()"
+	>
+		Delete Account</button
+	><br /><br />
+	<input
+		type="password"
+		id="password"
+		name="password"
+		style="display: none"
+		placeholder="Enter your password"
+		required
+	/>
+</form>
 {% endblock %}

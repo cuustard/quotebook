@@ -28,14 +28,17 @@
 			</button>
 			<div class="collapse navbar-collapse" id="navbar">
 				<div class="navbar-nav">
-					<a class="nav-item nav-link" id="Dashboard" href="/dashboard"
-						>My Dashboard</a
+					<a
+						class="nav-item nav-link"
+						id="Dashboard"
+						href="/dashboard"
+						>Dashboard</a
 					>
 					<a
 						class="nav-item nav-link"
 						id="quotebooks"
 						href="/quotebook_list"
-						>My Quotebooks</a
+						>Quotebooks</a
 					>
 					<a
 						class="nav-item nav-link"
@@ -49,6 +52,25 @@
 				</div>
 			</div>
 		</nav>
+		<div class="container">
+			{% with messages = get_flashed_messages(with_categories=true) %} {%
+			if messages %} {% for category, message in messages %} {% if
+			category == 'error' %}
+			<div
+				class="alert alert-danger alter-dismissable fade show"
+				role="alert"
+			>
+				{{ message }}
+			</div>
+			{% elif category == 'success' %}
+			<div
+				class="alert alert-success alter-dismissable fade show"
+				role="alert"
+			>
+				{{ message }}
+			</div>
+			{% endif %} {% endfor %} {% endif %} {% endwith %}
+		</div>
 		<div class="container">{% block content %} {% endblock %}</div>
 
 		<script

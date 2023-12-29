@@ -39,10 +39,26 @@ def create_account():
         email = userDetails['email']
         password = userDetails['password']
         cur = mysqlObject.connection.cursor()
+
+        # Check if account already exists
+        # query for username and email to compare to input
         cur.execute(
-            "INSERT INTO users(username, email, password) VALUES(%s, %s, %s)", (username, email, password))
-        mysqlObject.connection.commit()
+            "SELECT username, email FROM users WHERE username = %s OR email = %s", (username, email))
+        # only store the first result because we only need to check if there is a result not what the result is
+        result = cur.fetchone()
+        if result:
+            if result[0] == username:
+                flash("Account with that username already exists.", category='error')
+            if result[1] == email:
+                flash("Account with that email already exists.", category='error')
+            return redirect(url_for('create_account'))
+        # otherwise create account
+        else:
+            cur.execute(
+                "INSERT INTO users(username, email, password) VALUES(%s, %s, %s)", (username, email, password))
+            mysqlObject.connection.commit()
         cur.close()
+        flash("Account created successfully!", category='success')
         return redirect(url_for('login'))
     return render_template("auth/create_account.html")
 
@@ -61,11 +77,13 @@ def login():
         result = cur.fetchone()
         cur.close()
         if result is None:
-            return "No data fetched. Something went wrong. or there is not account registed with this username."
+            flash("Account with that username does not exist.", category='error')
+            return redirect(url_for('login'))
         queriedPassword = result[0]
         if password == queriedPassword:
             session['loggedin'] = True
             session['username'] = username
+            flash("Logged in successfully!", category='success')
             return redirect(url_for('dashboard'))
         else:
             return "wrong password"
@@ -74,17 +92,84 @@ def login():
 # For the dashboard
 
 
-@app.route('/dashboard')
+@app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
-    return render_template("dashboard/dashboard.html")
+    cur = mysqlObject.connection.cursor()
+    username = session['username']
+    cur.execute("SELECT user_id FROM users WHERE username = %s", [username])
+    user_id = cur.fetchone()[0]
+    if request.method == 'POST':
+        if request.form.get('newQuote') == 'newQuote':
+            quoteDetails = request.form
+            quote = quoteDetails['quote'].capitalize()
+            quotee = quoteDetails['quotee'].title()
+            date = quoteDetails['date']
+            time = quoteDetails['time']
+            if user_id is None:
+                return "No data fetched. Something went wrong."
+            cur.execute(
+                "INSERT INTO quotes(quote, quotee, date, time, user_id) VALUES(%s, %s, %s, %s, %s)", (quote, quotee, date, time, user_id))
+            mysqlObject.connection.commit()
+            flash("Quote added successfully!", category='success')
+            return redirect(url_for('dashboard'))
+        elif request.form.get('dateDESC') == 'dateDESC':
+            if user_id is None:
+                return "No data fetched. Something went wrong."
+            cur.execute(
+                "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s ORDER BY date ASC", [user_id])
+            result = cur.fetchall()
+            return render_template("dashboard/dashboard.html", result=result)
+        elif request.form.get('dateASC') == 'dateASC':
+            if user_id is None:
+                return "No data fetched. Something went wrong."
+            cur.execute(
+                "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s ORDER BY date DESC", [user_id])
+            result = cur.fetchall()
+            return render_template("dashboard/dashboard.html", result=result)
+        elif request.form.get('searchButton') == 'searchButton':
+            searchDetails = request.form
+            search = searchDetails['search']
+            if user_id is None:
+                return "No data fetched. Something went wrong."
+            cur.execute(
+                "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s AND quote LIKE %s", [user_id, "%" + search + "%"])
+            result = cur.fetchall()
+            return render_template("dashboard/dashboard.html", result=result)
+
+    if user_id is None:
+        return "No data fetched. Something went wrong."
+    cur.execute(
+        "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s", [user_id])
+    result = cur.fetchall()
+    cur.close()
+    return render_template("dashboard/dashboard.html", result=result)
 
 # For the user settings
 
 
-@app.route('/user_settings')
+@app.route('/user_settings', methods=['GET', 'POST'])
 @login_required
-def settings():
+def user_settings():
+    username = session['username']
+    if request.method == 'POST':
+        if "deleteAccount" in request.form:
+            cur = mysqlObject.connection.cursor()
+            cur.execute(
+                "SELECT user_id, password FROM users WHERE username = %s", [username])
+            result = cur.fetchone()
+            if result[1] == request.form['password']:
+                cur.execute("DELETE FROM quotes WHERE user_id = %s",
+                            [result[0]])
+                cur.execute(
+                    "DELETE FROM users WHERE username = %s", [session['username']])
+                mysqlObject.connection.commit()
+                cur.close()
+                session.clear()
+                flash("Account deleted successfully!", category='success')
+                return redirect(url_for('create_account'))
+            else:
+                return "<p>Wrong password. Account not deleted.</p>"
     return render_template("dashboard/settings.html")
 
 # For the quotebook list
@@ -101,6 +186,7 @@ def quotebook_list():
 @app.route('/logout')
 def logout():
     session.clear()
+    flash("Logged out successfully!", category='success')
     return redirect(url_for('create_account'))
 
 

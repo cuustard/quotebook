@@ -64,3 +64,8 @@ function validate_quote(quote) {
 function validate_quotee(quotee) {
 	return quotee.length >= 2 && quotee.length <= 50;
 }
+
+function showPasswordInput() {
+	var passwordInput = document.getElementById("password");
+	passwordInput.style.display = "block";
+}
