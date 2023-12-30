@@ -2,10 +2,10 @@ from flask import Flask, Blueprint, render_template, request, redirect, url_for,
 from flask_mysqldb import MySQL
 from website import create_app
 from functools import wraps
-
+from datetime import datetime
 # instantiate the app AND configure session secret key
 app = create_app()
-app.secret_key = 'your secret key'
+app.secret_key = 'stinky winky baka'
 
 # Configure MySQL connection
 app.config['MYSQL_HOST'] = 'localhost'
@@ -68,28 +68,48 @@ def create_account():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        userDetails = request.form
-        username = userDetails['username']
-        password = userDetails['password']
-        cur = mysqlObject.connection.cursor()
-        cur.execute(
-            "SELECT password FROM users WHERE username = %s", [username])
-        result = cur.fetchone()
-        cur.close()
-        if result is None:
+        # get the form data
+        form = request.form
+        # get username input from the form
+        username = form['username']
+        # get the user_id for the username
+        user_id = get_user_id(username)
+        password = form['password']
+        result = execute_sql_command(
+            "SELECT password FROM users WHERE user_id = %s", [user_id])
+        # if the result is empty, then the username does not exist so error
+        if len(result) < 1:
             flash("Account with that username does not exist.", category='error')
             return redirect(url_for('login'))
-        queriedPassword = result[0]
-        if password == queriedPassword:
+        # compare the password input to the password in the database
+        elif result[0][0] == password:
             session['loggedin'] = True
             session['username'] = username
             flash("Logged in successfully!", category='success')
             return redirect(url_for('dashboard'))
         else:
-            return "wrong password"
+            flash("Incorrect password.", category='error')
+            return redirect(url_for('login'))
     return render_template("auth/login.html")
 
-# For the dashboard
+
+def execute_sql_command(query, param):
+    cur = mysqlObject.connection.cursor()
+    cur.execute(query, param)
+    return cur.fetchall()
+
+
+def get_user_id(username):
+    result = execute_sql_command(
+        "SELECT user_id FROM users WHERE username = %s", [username])
+    # return the first element of the first list in the tuple. THis needs to be done as the query function returns more than 1 row. If there is no result, return None
+    return result[0][0] if result else None
+
+
+def render_dashboard(result, all_quotees):
+    return render_template("dashboard/dashboard.html", result=result, all_quotees=all_quotees)
+
+# dashobard route
 
 
 @app.route('/dashboard', methods=['GET', 'POST'])
@@ -97,53 +117,47 @@ def login():
 def dashboard():
     cur = mysqlObject.connection.cursor()
     username = session['username']
-    cur.execute("SELECT user_id FROM users WHERE username = %s", [username])
-    user_id = cur.fetchone()[0]
+    user_id = get_user_id(username)
+    if user_id == None:
+        return "No data fetched. Something went wrong."
+    all_quotees = execute_sql_command(
+        "SELECT DISTINCT quotee FROM quotes WHERE user_id = %s", [user_id])
+
     if request.method == 'POST':
-        if request.form.get('newQuote') == 'newQuote':
-            quoteDetails = request.form
-            quote = quoteDetails['quote'].capitalize()
-            quotee = quoteDetails['quotee'].title()
-            date = quoteDetails['date']
-            time = quoteDetails['time']
-            if user_id is None:
-                return "No data fetched. Something went wrong."
-            cur.execute(
+        form = request.form
+        if form.get('newQuote'):
+            quote = form['quote'].capitalize()
+            quotee = form['quotee'].title()
+            date = form['date']
+            time = form['time']
+            execute_sql_command(
                 "INSERT INTO quotes(quote, quotee, date, time, user_id) VALUES(%s, %s, %s, %s, %s)", (quote, quotee, date, time, user_id))
             mysqlObject.connection.commit()
             flash("Quote added successfully!", category='success')
             return redirect(url_for('dashboard'))
-        elif request.form.get('dateDESC') == 'dateDESC':
-            if user_id is None:
-                return "No data fetched. Something went wrong."
-            cur.execute(
-                "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s ORDER BY date ASC", [user_id])
-            result = cur.fetchall()
-            return render_template("dashboard/dashboard.html", result=result)
-        elif request.form.get('dateASC') == 'dateASC':
-            if user_id is None:
-                return "No data fetched. Something went wrong."
-            cur.execute(
-                "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s ORDER BY date DESC", [user_id])
-            result = cur.fetchall()
-            return render_template("dashboard/dashboard.html", result=result)
-        elif request.form.get('searchButton') == 'searchButton':
-            searchDetails = request.form
-            search = searchDetails['search']
-            if user_id is None:
-                return "No data fetched. Something went wrong."
-            cur.execute(
-                "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s AND quote LIKE %s", [user_id, "%" + search + "%"])
-            result = cur.fetchall()
-            return render_template("dashboard/dashboard.html", result=result)
-
-    if user_id is None:
-        return "No data fetched. Something went wrong."
-    cur.execute(
-        "SELECT quote, quotee, date, time FROM quotes WHERE user_id = %s", [user_id])
-    result = cur.fetchall()
-    cur.close()
-    return render_template("dashboard/dashboard.html", result=result)
+        # inefficient because it requires the database each time the user clicks to sort their quotebook. I should store the current state of the quotebook in their session and then sort that instead
+        elif form.get('dateASC'):
+            result = execute_sql_command(
+                "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date ASC, time ASC", [user_id])
+            return render_dashboard(result, all_quotees)
+        elif form.get('searchButton'):
+            # filters by the inputted search term
+            searchTerm = form['search']
+            result = execute_sql_command("SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s AND quote LIKE %s", [
+                                         user_id, "%" + searchTerm + "%"])
+            return render_dashboard(result, all_quotees)
+        elif form.get('quoteeSelection'):
+            quotee = form['quoteeSelection']
+            if quotee == "All":
+                result = execute_sql_command(
+                    "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date DESC, time DESC", [user_id])
+            else:
+                result = execute_sql_command(
+                    "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s AND quotee = %s", [user_id, quotee])
+                return render_dashboard(result, all_quotees)
+    result = execute_sql_command(
+        "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date DESC, time DESC", [user_id])
+    return render_template("dashboard/dashboard.html", result=result, all_quotees=all_quotees)
 
 # For the user settings
 

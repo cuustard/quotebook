@@ -1,67 +1,86 @@
 {% extends "dashboard_base.html" %} {% block title %}Dashboard{% endblock %} {%
 block content %}
+<h1>Personal Quotebook </h1>
+<hr>
 <h2>Input New Quote</h2>
-<form method="POST" action="/dashboard" onsubmit="return validate_quote()">
-    <div class="form-group">
-        <label for="quote">Quote</label>
-        <input
-            type="text"
-            id="quote"
-            name="quote"
-            class="form-control"
-            required
-        />
-    </div>
-    <div class="form-group">
-        <label for="quotee">Quotee</label>
-        <input
-            type="text"
-            id="quotee"
-            name="quotee"
-            class="form-control"
-            required
-        />
-    </div>
-    <div class="form-group">
-        <label for="date">Date</label>
-        <input
-            type="date"
-            id="date"
-            name="date"
-            class="form-control"
-            required
-        />
-    </div>
-    <div class="form-group">
-        <label for="time">Time</label>
-        <input
-            type="time"
-            id="time"
-            name="time"
-            class="form-control"
-            required
-        />
-    </div>
-<button type="submit" class="btn btn-primary" value="newQuote" name="newQuote" class="form-control" />Submit</button>
-</form>
-    <h2>My Quotes</h2>
-    <form method="POST" action="/dashboard"> 
-        <button type="submit" class="btn btn-primary" value="dateASC" name="dateASC" class="form-control" />Newest First</button>
-        <button type="submit" class="btn btn-primary" value="dateDESC" name="dateDESC" class="form-control" />Oldest First</button>
-    </form>
-    <form method="POST" action="/dashboard" class="search-form"> 
-        <input
-            type="text"
-            id="search"
-            name="search"
-            class="form-control"
-            placeholder="Enter Keyword">
-        <button type="submit" class="btn btn-primary" value="searchButton" name="searchButton" class="form-control" />Search</button>
+<br>
+    <form method="POST" action="/dashboard" onsubmit="return validate_quote()" autocomplete="off">
+        <div class="form-group row">
+            <label for="quote" class="col-sm-2 col-form-label">Quote</label>
+            <div class="col-sm-10">
+                <input type="text" id="quote" name="quote" class="form-control" required />
+            </div>
+        </div>
+        <div class="form-group row">
+            <label for="quotee" class="col-sm-2 col-form-label">Quotee</label>
+            <div class="col-sm-10">
+                <input type="text" id="quotee" name="quotee" class="form-control" required />
+            </div>
+        </div>
+        <div class="form-group row">
+            <label for="date" class="col-sm-2 col-form-label">Date</label>
+            <div class="col-sm-10">
+                <input type="date" id="date" name="date" class="form-control" required />
+            </div>
+        </div>
+        <div class="form-group row">
+            <label for="time" class="col-sm-2 col-form-label">Time</label>
+            <div class="col-sm-10">
+                <input type="time" id="time" name="time" class="form-control" required />
+            </div>
+        </div>
+        <div class="form-group row">
+            <div class="col-sm-10 offset-sm-2">
+                <button type="submit" class="btn btn-primary" value="newQuote" name="newQuote">Submit</button>
+            </div>
+        </div>
     </form>
     <hr>
-<p><div class="quotes">
-    {% for quote in result %}
-            <p class="form-control">"{{ quote[0] }}" - {{quote[1]}} on {{quote[2]}} at {{quote[3]}}</p>
-    {% endfor %}
-</div></p>
+    <h3>Sort/Filter</h3>
+        <form method="POST" action="/dashboard" class="form-inline" autocomplete="off">
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary" value="dateDESC" name="dateDESC" class="form-control" />Newest First</button>
+            </div>
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary" value="dateASC" name="dateASC" class="form-control" />Oldest First</button>
+            </div>
+        </form>
+        <br>
+        <form method="POST" action="/dashboard" class="form-inline" autocomplete="off">
+            <div class="form-group">
+                <input type="text" id="search" name="search" class="form-control" placeholder="Enter Keyword">
+                <button type="submit" class="btn btn-primary" value="searchButton" name="searchButton" class="form-control" />Search</button>
+            </div>
+        </form>
+        <form method="POST" action="/dashboard" autocomplete="off">
+            <div class="form-group">
+                <label for="quoteeSelection">Filter by Quotee</label>
+                <select id="quoteeSelection" name="quoteeSelection">
+                    <option value="All">All</option>
+                    {% for quotee in all_quotees %}
+                    <option value="{{quotee[0]}}">{{quotee[0]}}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary" value="quoteeSelectionSubmit" name="quoteeSelectionSubmit" class="form-control" />Filter</button>
+            </div>
+        </form>
+    <hr>
+    <div class="quotebookContainer">
+        <table class="table table-hover">
+            <tr>
+                <th>Quote</th>
+                <th>Quotee</th>
+                <th>Date</th>
+                <th>Time</th>
+            </tr>
+            {% for quote in result %}
+            <tr>
+                <td><q>{{quote[0]}}</q></td>
+                <td>{{quote[1]}}</td>
+                <td>{{quote[2]}}</td>
+                <td>{{quote[3]}}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
 {% endblock %}
