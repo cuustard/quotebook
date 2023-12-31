@@ -4,6 +4,8 @@ block content %}
 <hr>
 <h2>Input New Quote</h2>
 <br>
+<details>
+    <summary>Add New Quote</summary>
     <form method="POST" action="/dashboard" onsubmit="return validate_quote()" autocomplete="off">
         <div class="form-group row">
             <label for="quote" class="col-sm-2 col-form-label">Quote</label>
@@ -35,6 +37,7 @@ block content %}
             </div>
         </div>
     </form>
+</details>
     <hr>
     <h3>Sort/Filter</h3>
         <form method="POST" action="/dashboard" class="form-inline" autocomplete="off">
@@ -53,32 +56,37 @@ block content %}
             </div>
         </form>
         <form method="POST" action="/dashboard" autocomplete="off">
+            <label for="quoteeSelection">Filter by Quotee</label>
             <div class="form-group">
-                <label for="quoteeSelection">Filter by Quotee</label>
-                <select id="quoteeSelection" name="quoteeSelection">
-                    <option value="All">All</option>
-                    {% for quotee in all_quotees %}
-                    <option value="{{quotee[0]}}">{{quotee[0]}}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit" class="btn btn-primary" value="quoteeSelectionSubmit" name="quoteeSelectionSubmit" class="form-control" />Filter</button>
+                {% for quotee in all_quotees %}
+                <label for="{{quotee[0]}}">{{quotee[0]}}</label>
+                <input type="checkbox" id="quoteeSelection" name="quoteeSelection" value="{{quotee[0]}}"><br>
+                {% endfor %}
             </div>
+            <button type="submit" class="btn btn-primary" value="quoteeButton" name="quoteeButton" class="form-control" />Filter</button>
         </form>
     <hr>
     <div class="quotebookContainer">
         <table class="table table-hover">
             <tr>
                 <th>Quote</th>
-                <th>Quotee</th>
+                <th>Quotee</th> 
                 <th>Date</th>
                 <th>Time</th>
+                <th>Action</th>
             </tr>
             {% for quote in result %}
             <tr>
-                <td><q>{{quote[0]}}</q></td>
-                <td>{{quote[1]}}</td>
+                <td><q>{{quote[1]}}</q></td>
                 <td>{{quote[2]}}</td>
                 <td>{{quote[3]}}</td>
+                <td>{{quote[4]}}</td>
+                <td>
+                    <form method="POST" action="/edit_quote">
+                        <input type="hidden" name="quote_id" value="{{quote[0]}}">
+                        <button type="submit" class="btn btn-primary" value="editQuote" name="editQuote" >Update</button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </table>

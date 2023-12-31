@@ -138,30 +138,72 @@ def dashboard():
         # inefficient because it requires the database each time the user clicks to sort their quotebook. I should store the current state of the quotebook in their session and then sort that instead
         elif form.get('dateASC'):
             result = execute_sql_command(
-                "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date ASC, time ASC", [user_id])
+                "SELECT quote_id, quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date ASC, time ASC", [user_id])
             return render_dashboard(result, all_quotees)
         elif form.get('searchButton'):
             # filters by the inputted search term
             searchTerm = form['search']
-            result = execute_sql_command("SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s AND quote LIKE %s", [
+            result = execute_sql_command("SELECT quote_id, quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s AND quote LIKE %s", [
                                          user_id, "%" + searchTerm + "%"])
             return render_dashboard(result, all_quotees)
-        elif form.get('quoteeSelection'):
-            quotee = form['quoteeSelection']
-            if quotee == "All":
-                result = execute_sql_command(
-                    "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date DESC, time DESC", [user_id])
-            else:
-                result = execute_sql_command(
-                    "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s AND quotee = %s", [user_id, quotee])
-                return render_dashboard(result, all_quotees)
+        elif form.get('quoteeButton'):
+            # Get selected quotees from form data
+            selected_quotees = form.getlist('quoteeSelection')
+
+            # Create a string of placeholders for the SQL command
+            placeholders = ', '.join(['%s'] * len(selected_quotees))
+
+            # Add user_id to the list of parameters
+            params = selected_quotees + [user_id]
+
+            # Modify SQL command to filter quotes by selected quotees
+            result = execute_sql_command(
+                f"SELECT quote_id, quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE quotee IN ({placeholders}) AND user_id = %s", params)
+
+            return render_dashboard(result, all_quotees)
+        elif form.get('editQuote'):
+            quote_id = form['quote_id']
+            return render_template("dashboard/edit_quote.html", quote_id=quote_id)
     result = execute_sql_command(
-        "SELECT quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date DESC, time DESC", [user_id])
+        "SELECT quote_id, quote, quotee, DATE_FORMAT(date, '%%D %%b %%Y'), time FROM quotes WHERE user_id = %s ORDER BY date DESC, time DESC", [user_id])
     return render_template("dashboard/dashboard.html", result=result, all_quotees=all_quotees)
 
+
+@app.route('/edit_quote', methods=['GET', 'POST'])
+@login_required
+def edit_quote():
+    form = request.form
+    if request.method == 'POST':
+        quote_id = form['quote_id']
+        if form.get('editQuote'):
+            result = execute_sql_command(
+                "SELECT quote_id, quote, quotee, DATE_FORMAT(date, '%%Y-%%m-%%d'), time FROM quotes WHERE quote_id = %s", [quote_id])
+            result = result[0]
+            return render_template("dashboard/edit_quote.html", result=result)
+        elif form.get('updateQuote'):
+            quote = form['quote'].capitalize()
+            quotee = form['quotee'].title()
+            date = form['date']
+            time = form['time']
+            cur = mysqlObject.connection.cursor()
+            cur.execute("UPDATE quotes SET quote = %s, quotee = %s, date = %s, time = %s WHERE quote_id = %s", [
+                quote, quotee, date, time, quote_id])
+            mysqlObject.connection.commit()
+            cur.close()
+            flash("Quote updated successfully!", category='success')
+            return redirect(url_for('dashboard'))
+        elif form.get('deleteQuote'):
+            cur = mysqlObject.connection.cursor()
+            cur.execute("DELETE FROM quotes WHERE quote_id = %s", [quote_id])
+            mysqlObject.connection.commit()
+            cur.close()
+            flash("Quote deleted successfully!", category='success')
+            return redirect(url_for('dashboard'))
+    flash("You attempted to visit the Edit Quote Page without choosing a quote to edit! Click 'Update' to edit a quote.", category='error')
+    return redirect(url_for('dashboard'))
+
+
 # For the user settings
-
-
 @app.route('/user_settings', methods=['GET', 'POST'])
 @login_required
 def user_settings():

@@ -1,0 +1,101 @@
+{% extends "dashboard_base.html" %} {% block title %}Edit Quote{% endblock %} {%
+block content %}
+<h1>Edit Quote</h1>
+<p>The Current state of the quote:</p>
+<div class="quotebookContainer">
+	<table class="table table-hover table-bordered">
+		<tr>
+			<th>Quote</th>
+			<th>Quotee</th> 
+			<th>Date</th>
+			<th>Time</th>
+		</tr>
+		<tr>
+			<td><q>{{result[1]}}</q></td>
+			<td>{{result[2]}}</td>
+			<td>{{result[3]}}</td>
+			<td>{{result[4]}}</td>
+		</tr>
+	</table>
+</div>
+</tr>
+<hr>
+<form
+	method="POST"
+	action="/edit_quote"
+	onsubmit="return validate_quote()"
+	autocomplete="off"
+>
+	<div class="form-group row">
+		<label for="quote" class="col-sm-2 col-form-label">Quote</label>
+		<div class="col-sm-10">
+			<input
+				type="hidden"
+				id="id"
+				name="quote_id"
+				value="{{result[0]}}"
+			/>
+			<input
+				type="text"
+				id="quote"
+				name="quote"
+				class="form-control"
+				value="{{result[1]}}"
+				required
+			/>
+		</div>
+	</div>
+	<div class="form-group row">
+		<label for="quotee" class="col-sm-2 col-form-label">Quotee</label>
+		<div class="col-sm-10">
+			<input
+				type="text"
+				id="quotee"
+				name="quotee"
+				class="form-control"
+				value="{{result[2]}}"
+				required
+			/>
+		</div>
+	</div>
+	<div class="form-group row">
+		<label for="date" class="col-sm-2 col-form-label">Date</label>
+		<div class="col-sm-10">
+			<input
+				type="date"
+				id="date"
+				name="date"
+				class="form-control"
+				value="{{result[3]}}"
+				required
+			/>
+		</div>
+	</div>
+	<div class="form-group row">
+		<label for="time" class="col-sm-2 col-form-label">Time</label>
+		<div class="col-sm-10">
+			<input
+				type="time"
+				id="time"
+				name="time"
+				class="form-control"
+				value="{{result[4]}}"
+				required
+			/>
+		</div>
+	</div>
+	<div class="form-group row">
+		<div class="col-sm-10 offset-sm-2">
+			<button
+				type="submit"
+				class="btn btn-primary"
+				value="updateQuote"
+				name="updateQuote"
+			>
+				Submit
+			</button>
+			<button type="submit" class="btn btn-danger" value="deleteQuote" name="deleteQuote">Delete</button>
+		</div>
+	</div>
+</form>
+{% endblock %}
