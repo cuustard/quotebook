@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-paper text-ink antialiased;
+}
+
+/* Thin, unobtrusive scrollbars for the feed columns. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d8d2c6 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #d8d2c6;
+  border-radius: 9999px;
+}
+
+/* Utility: focus ring consistent with the warm palette. */
+@layer components {
+  .qb-input {
+    @apply w-full rounded-lg border border-black/10 bg-paper-raised px-3 py-2 text-sm
+      text-ink placeholder:text-ink-muted/60 outline-none transition
+      focus:border-accent/50 focus:ring-2 focus:ring-accent/20;
+  }
+  .qb-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
+      font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .qb-btn-primary {
+    @apply qb-btn bg-accent text-white hover:bg-accent/90;
+  }
+  .qb-btn-ghost {
+    @apply qb-btn text-ink hover:bg-black/5;
+  }
+  .qb-card {
+    @apply rounded-2xl border border-black/[0.06] bg-paper-raised shadow-sm;
+  }
+  .qb-chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+}
