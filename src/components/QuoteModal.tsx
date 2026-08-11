@@ -60,11 +60,19 @@ export function QuoteModal() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Closing is an EVENT, so that is where the error is cleared. It used to be
+  // cleared at the top of the open effect, which renders the previous error
+  // once before wiping it (react-hooks/set-state-in-effect). Every close path
+  // — Cancel, backdrop, Escape, and a successful save — goes through here.
+  const handleClose = useCallback(() => {
+    setError(null);
+    close();
+  }, [close]);
+
   // (Re)initialise the form whenever the modal opens.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setError(null);
 
     (async () => {
       if (editQuoteId) {
@@ -193,7 +201,7 @@ export function QuoteModal() {
         // Manual conversion: retire the capture and link the quote it became.
         if (capture) await completeCapture(capture.id, quoteId);
       }
-      close();
+      handleClose();
     } catch (err) {
       console.error("[quote-modal] save failed", err);
       setError(errorMessage(err, "Couldn't save the quote."));
@@ -205,7 +213,7 @@ export function QuoteModal() {
   return (
     <Modal
       open={open}
-      onClose={close}
+      onClose={handleClose}
       size="lg"
       title={editQuoteId ? "Edit quote" : "New quote"}
     >
@@ -316,7 +324,7 @@ export function QuoteModal() {
         {/* Actions */}
         {error && <p className="text-sm text-red-400">{error}</p>}
         <div className="flex items-center justify-end gap-2 pt-1">
-          <button onClick={close} className="qb-btn-ghost">
+          <button onClick={handleClose} className="qb-btn-ghost">
             Cancel
           </button>
           <button onClick={handleSave} disabled={!canSave} className="qb-btn-primary">

@@ -33,17 +33,6 @@ const config = [
   ...nextTypeScript,
   {
     rules: {
-      // ── Pre-existing findings, deliberately WARN not ERROR ────────────────
-      // These two rules are new in eslint-config-next 16 (React Compiler-aware
-      // lint). They flag five call sites that predate the Next 16 upgrade and
-      // are working code — see AUDIT_SUMMARY.md "React Compiler lint" for the
-      // list. Rewriting five components' state flow does not belong in a
-      // dependency upgrade, and this repo has no React rendering tests to
-      // catch a mistake made while doing it. Warned so they stay visible;
-      // raise back to "error" once the call sites are fixed.
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/purity": "warn",
-
       // `const { _dirty, ...rest } = row` is the deliberate idiom for dropping
       // a local-only column before it goes to Supabase — the binding exists to
       // be discarded, so neither it nor an `_`-prefixed name is dead code.

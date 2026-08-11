@@ -33,15 +33,24 @@ export function MultiSelectDropdown({
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Opening is an EVENT, so the state it resets belongs in the handler, not in
+  // an effect — resetting during the post-open effect renders the stale query
+  // once before clearing it, which is what react-hooks/set-state-in-effect
+  // warns about. Focus stays in the effect: it touches the DOM after paint,
+  // which is exactly what an effect is for.
+  const setOpenState = (next: boolean) => {
+    if (next) setQuery("");
+    setOpen(next);
+  };
+
   useEffect(() => {
     if (!open) return;
-    setQuery("");
     searchRef.current?.focus();
     const onDocClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenState(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setOpenState(false);
     };
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
@@ -75,7 +84,7 @@ export function MultiSelectDropdown({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpenState(!open)}
         className={cn(
           "qb-btn-ghost w-full justify-between border border-white/10 px-3 text-left",
           selected.length > 0 && "border-accent/40 text-accent",

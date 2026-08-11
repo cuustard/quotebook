@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/dexie";
@@ -105,7 +105,8 @@ export default function ManagePage() {
   );
 }
 
-function ManageBookRow({
+/** Exported for testing: the rename box re-syncs when the book prop changes. */
+export function ManageBookRow({
   book,
   canAdmin,
   ownedByMe,
@@ -121,12 +122,28 @@ function ManageBookRow({
   const [copied, setCopied] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
-  useEffect(() => setName(book.name), [book.name]);
+  // Re-seed the rename box when the book is renamed elsewhere (another device
+  // syncing in). This is React's documented "adjusting state when a prop
+  // changes" pattern: comparing against the previous prop DURING render and
+  // re-rendering immediately, rather than syncing in an effect — which paints
+  // the stale name first and re-renders after (react-hooks/set-state-in-effect).
+  const [lastSyncedName, setLastSyncedName] = useState(book.name);
+  if (book.name !== lastSyncedName) {
+    setLastSyncedName(book.name);
+    setName(book.name);
+  }
+
+  // The invite list is fetched, so "now" is captured when it lands rather than
+  // read during render — Date.now() in a render body is impure and makes the
+  // output depend on when React happens to re-run it (react-hooks/purity).
+  const [invitesFetchedAt, setInvitesFetchedAt] = useState(() => Date.now());
 
   const loadInvites = async () => {
     if (!canAdmin) return;
     try {
-      setInvites(await listInvites(book.id));
+      const next = await listInvites(book.id);
+      setInvites(next);
+      setInvitesFetchedAt(Date.now());
     } catch {
       /* offline — show nothing */
     }
@@ -201,7 +218,8 @@ function ManageBookRow({
               ) : (
                 <ul className="flex flex-col gap-2">
                   {invites.map((inv) => {
-                    const expired = new Date(inv.expires_at).getTime() < Date.now();
+                    const expired =
+                      new Date(inv.expires_at).getTime() < invitesFetchedAt;
                     return (
                       <li key={inv.id} className="flex items-center justify-between rounded-lg bg-paper px-3 py-2">
                         <div>
