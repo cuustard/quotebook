@@ -67,11 +67,20 @@ export default function QuickAddPage() {
   // app sends no body). Read from location rather than useSearchParams so the
   // route stays statically rendered, then strip the query so a refresh or a
   // back-navigation doesn't resurrect an already-saved share.
+  //
+  // The setState below is flagged by react-hooks/set-state-in-effect, and the
+  // usual remedy — a lazy `useState` initializer — is WRONG here. This route is
+  // statically prerendered (`○ Static` in the build output), so `window` does
+  // not exist when the initializer would run, and seeding from it client-side
+  // would make the hydrated markup disagree with the prerendered HTML. Reading
+  // location after mount is the hydration-safe way to do this, and the effect
+  // also has to run `history.replaceState`, which is a side effect regardless.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const shared =
       params.get("text") || params.get("title") || params.get("url") || "";
     if (!shared) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see above: prerender + hydration safety
     setText(shared.slice(0, MAX_CAPTURE_TEXT));
     window.history.replaceState(null, "", window.location.pathname);
     // Land the caret at the end so the user can keep typing.

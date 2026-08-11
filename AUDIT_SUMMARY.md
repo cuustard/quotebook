@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-11 · **Scope:** full codebase (~7,500 lines across `src/`, `supabase/`, `public/`)
 **Baseline:** 107 tests passing, clean typecheck, clean lint
-**Final:** 136 tests passing, clean typecheck, clean lint, production build succeeds
+**Final:** 157 tests passing (was 107), clean typecheck, clean lint, production build succeeds
+**Stack:** upgraded to Next 16.3 / React 19.2 / zustand 5 / dexie-react-hooks 4 — `npm audit`: 0 vulnerabilities
 
 ---
 
@@ -22,8 +23,8 @@ Two findings are worth calling out above the rest:
    at 5.3 seconds for a 2,000-quote book. Now ~1.0s (5.1×), and 23× faster when the book is a
    slice of a larger store.
 
-One item was deliberately **not** fixed — the Next.js dependency upgrade. See
-[Not actioned](#not-actioned-needs-your-decision).
+The dependency upgrade that this report originally deferred has since been completed — see
+[Not actioned](#not-actioned-needs-your-decision), kept for the record.
 
 ---
 
@@ -253,9 +254,50 @@ IndexedDB inspected directly:
 
 ---
 
+## React Compiler lint — RESOLVED
+
+`eslint-config-next@16` enables React Compiler-aware hooks rules, which flagged five call
+sites that predated the upgrade. **All five are now fixed and both rules are back at
+`error`** — `npm run lint` reports zero warnings.
+
+The fixes were made *after* adding rendering tests (below), and each behavioural one was
+pinned by a test written against the old code first, so the refactors are provably
+behaviour-preserving rather than merely lint-clean.
+
+| Location | Was | Now |
+|---|---|---|
+| `MultiSelectDropdown.tsx` | `setQuery("")` in the open effect | reset in the open/close handler — opening is an event |
+| `QuoteModal.tsx` | `setError(null)` in the open effect | cleared in `handleClose`, which every close path routes through |
+| `manage/page.tsx` (sync) | `useEffect(() => setName(book.name))` | React's documented "adjust state during render when a prop changes" |
+| `manage/page.tsx` (purity) | `Date.now()` during render | timestamp captured when the invite list lands |
+| `quick/page.tsx` | `setText(...)` in the share-target effect | **kept**, with a targeted `eslint-disable` |
+
+The last one is a deliberate, documented exception rather than a fix. That route is
+statically prerendered (`○ Static`), so the usual remedy — a lazy `useState` initializer —
+would read `window` where it does not exist and make the hydrated markup disagree with the
+prerendered HTML. Reading location after mount is the hydration-safe approach, and the
+effect must call `history.replaceState` regardless.
+
+## Rendering tests (new)
+
+The suite previously had **zero** React coverage — all 136 tests were logic and Dexie in a
+`node` environment. That gap is why the Next 16 / React 19 upgrade had to be validated by
+hand in a browser. Added jsdom + `@testing-library/react`, with `node` kept as the default
+environment so the existing suites stay fast; component tests opt in per-file with a
+`// @vitest-environment jsdom` docblock.
+
+| File | Tests | Covers |
+|---|---|---|
+| `MultiSelectDropdown.test.tsx` | 9 | open/close, filtering, **query reset on reopen**, selection, Escape/outside-click, trigger summary |
+| `QuoteModal.test.tsx` | 7 | save validation, line add/remove, blank-line dropping, save failure surfaced, **no stale error across opens** |
+| `manage/ManageBookRow.test.tsx` | 5 | **rename box adopts an external rename**, does not clobber in-progress typing, rename gating |
+
+The bolded cases are the ones guarding the refactors above; each was mutation-tested by
+reverting its fix and confirming the test fails.
+
 ## Not actioned (needs your decision)
 
-**`npm audit`: 7 high-severity advisories (6 Next.js, 1 postcss).**
+**RESOLVED — upgraded to Next 16.3.0 / React 19.2 on `chore/next-16-upgrade`; `npm audit` now reports 0 vulnerabilities.** The original finding and reasoning are kept below for the record.
 
 The only available fix is `next@16.3.0` — a **major upgrade from 14.2.35**. I did not perform it,
 for three reasons:

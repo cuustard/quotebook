@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -17,17 +17,25 @@ import { useUIStore } from "@/store/useUIStore";
 
 /**
  * `useSearchParams` needs a Suspense boundary, and it's what lets the stats
- * page deep-link into a pre-filtered feed.
+ * page deep-link into a pre-filtered feed. In Next 16 route params are also a
+ * Promise, and unwrapping one with `use()` suspends too — so both happen
+ * INSIDE this boundary rather than in the exported page component, which has
+ * no boundary of its own above it.
  */
-export default function QuotebookFeedPage({ params }: { params: { id: string } }) {
+export default function QuotebookFeedPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   return (
     <Suspense fallback={<div className="p-8 text-sm text-ink-muted">Loading…</div>}>
-      <FeedPage bookId={params.id} />
+      <FeedPage params={params} />
     </Suspense>
   );
 }
 
-function FeedPage({ bookId }: { bookId: string }) {
+function FeedPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: bookId } = use(params);
   const openCreateQuote = useUIStore((s) => s.openCreateQuote);
   const openEditQuote = useUIStore((s) => s.openEditQuote);
   const joinBook = useSyncStore((s) => s.joinBook);

@@ -14,7 +14,7 @@
  */
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { use, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/dexie";
 import { feedHref, monthBounds } from "@/lib/feedUrl";
@@ -36,8 +36,14 @@ function prettyDate(iso: string): string {
   return `${d} ${months[m - 1]} ${y}`;
 }
 
-export default function QuotebookStatsPage({ params }: { params: { id: string } }) {
-  const bookId = params.id;
+export default function QuotebookStatsPage({
+  params,
+}: {
+  // Next 16: route params are always a Promise. In a Client Component they are
+  // unwrapped with `use()`, which suspends until they resolve.
+  params: Promise<{ id: string }>;
+}) {
+  const { id: bookId } = use(params);
 
   const book = useLiveQuery(
     async () => (await db.quotebooks.get(bookId)) ?? null,
