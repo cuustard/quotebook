@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/dexie";
-import { createQuotebook } from "@/lib/repo";
+import { createQuotebook, pickPrivateBook } from "@/lib/repo";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { QuotebookCard } from "@/components/QuotebookCard";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -51,12 +51,14 @@ export default function DashboardPage() {
   const { privateBook, collaborative } = useMemo(() => {
     const books = data?.books ?? [];
     return {
-      privateBook: books.find((b) => b.is_private) ?? null,
+      // Same deterministic pick as ensurePrivateQuotebook, so the dashboard
+      // can never anchor a different private book than the boot logic.
+      privateBook: pickPrivateBook(books, user?.id ?? null),
       collaborative: books
         .filter((b) => !b.is_private)
         .sort((a, b) => (b.created_at > a.created_at ? 1 : -1)),
     };
-  }, [data]);
+  }, [data, user]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -69,7 +71,7 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-serif text-3xl font-semibold text-ink">Your spaces</h1>
+          <h1 className="font-heading text-3xl font-semibold text-ink">Your spaces</h1>
           <p className="mt-1 text-sm text-ink-muted">
             {user ? `Welcome back, ${user.email}.` : "You're browsing as a guest — everything is saved on this device."}
           </p>
@@ -95,7 +97,7 @@ export default function DashboardPage() {
           </div>
           {!user && isSupabaseConfigured && (
             <p className="text-xs text-ink-muted sm:ml-2">
-              Sign in to invite others — it'll sync once you do.
+              Sign in to invite others — it&apos;ll sync once you do.
             </p>
           )}
         </div>

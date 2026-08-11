@@ -8,16 +8,26 @@
  */
 
 import Fuse from "fuse.js";
+import { hasIssues } from "@/lib/integrity";
+import { weekdayIndex } from "@/lib/stats";
 import type { FeedFilters, QuoteWithLines } from "@/lib/types";
 
-/** Distinct people who can be filtered on: primary quotees + line speakers. */
+/**
+ * Distinct people who can be filtered on: the speakers across all lines.
+ * Case-insensitive dedupe ("Jake" and "jake" are the same person); the
+ * first-seen casing is kept for display.
+ */
 export function collectSpeakers(quotes: QuoteWithLines[]): string[] {
-  const set = new Set<string>();
+  const byKey = new Map<string, string>();
   for (const q of quotes) {
-    if (q.primary_quotee) set.add(q.primary_quotee);
-    for (const l of q.lines) if (l.speaker) set.add(l.speaker);
+    for (const l of q.lines) {
+      const s = l.speaker.trim();
+      if (!s) continue;
+      const key = s.toLowerCase();
+      if (!byKey.has(key)) byKey.set(key, s);
+    }
   }
-  return [...set].sort((a, b) => a.localeCompare(b));
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
 }
 
 /** Distinct tags across the feed, sorted for stable filter UIs. */
@@ -35,9 +45,36 @@ function sortInstant(q: QuoteWithLines, key: FeedFilters["sortKey"]): number {
   return new Date(`${q.quote_date}T${t}:00`).getTime();
 }
 
+// The Fuse index is cached per quotes-array identity (useLiveQuery hands the
+// same array reference between data changes), so typing in the search box
+// doesn't rebuild the index on every keystroke.
+const fuseCache = new WeakMap<QuoteWithLines[], Fuse<QuoteWithLines>>();
+
+function getFuse(quotes: QuoteWithLines[]): Fuse<QuoteWithLines> {
+  let fuse = fuseCache.get(quotes);
+  if (!fuse) {
+    fuse = new Fuse(quotes, {
+      ignoreLocation: true,
+      threshold: 0.4, // tolerant of minor typos / variations
+      minMatchCharLength: 2,
+      keys: [
+        { name: "tags", weight: 1.5 },
+        { name: "lines.speaker", weight: 1.5 },
+        { name: "lines.line_text", weight: 1.5 },
+        { name: "quote_context", weight: 0.5 },
+        { name: "lines.line_context", weight: 0.5 },
+      ],
+    });
+    fuseCache.set(quotes, fuse);
+  }
+  return fuse;
+}
+
 /**
- * Apply the full filter stack, then fuzzy search, then sort.
- * Order matters: cheap structured filters prune first, fuzzy ranking last.
+ * Apply fuzzy search, then the structured filter stack, then sort.
+ * Fuzzy runs first so the cached index over the full feed can be reused;
+ * per-quote matching is independent of the other filters, so the result set
+ * is identical either way.
  */
 export function applyFeed(
   quotes: QuoteWithLines[],
@@ -45,14 +82,22 @@ export function applyFeed(
 ): QuoteWithLines[] {
   let result = quotes;
 
-  // --- Speaker filter ----------------------------------------------------
-  // A match on ANY line's speaker (or the primary quotee) surfaces the WHOLE
-  // dialogue block, preserving conversational context.
+  // --- Fuzzy keyword search ---------------------------------------------
+  const query = filters.query.trim();
+  if (query) {
+    result = getFuse(quotes).search(query).map((r) => r.item);
+  }
+
+  // --- Speaker filter (configurable AND / OR, case-insensitive) ----------
+  // OR  → at least one selected speaker has a line in the quote.
+  // AND → every selected speaker has a line in the quote (they interact).
   if (filters.speakers.length > 0) {
-    const wanted = new Set(filters.speakers);
+    const wanted = filters.speakers.map((s) => s.toLowerCase());
     result = result.filter((q) => {
-      if (wanted.has(q.primary_quotee)) return true;
-      return q.lines.some((l) => wanted.has(l.speaker));
+      const present = new Set(q.lines.map((l) => l.speaker.trim().toLowerCase()));
+      return filters.speakerMode === "and"
+        ? wanted.every((s) => present.has(s))
+        : wanted.some((s) => present.has(s));
     });
   }
 
@@ -66,6 +111,29 @@ export function applyFeed(
     });
   }
 
+  // --- Hour of day -------------------------------------------------------
+  // Wall-clock, same as the stats page: the stored "HH:mm" is read directly
+  // rather than via Date, so a machine timezone can't shift a quote's hour.
+  if (filters.hours.length > 0) {
+    const wanted = new Set(filters.hours);
+    result = result.filter((q) => wanted.has(Number(q.quote_time?.slice(0, 2))));
+  }
+
+  // --- Weekday (Monday-first, matching the stats chart) ------------------
+  if (filters.weekdays.length > 0) {
+    const wanted = new Set(filters.weekdays);
+    result = result.filter((q) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(q.quote_date ?? "");
+      if (!m) return false;
+      return wanted.has(weekdayIndex(Number(m[1]), Number(m[2]), Number(m[3])));
+    });
+  }
+
+  // --- Incomplete-only ("what needs fixing?") ----------------------------
+  if (filters.onlyIncomplete) {
+    result = result.filter(hasIssues);
+  }
+
   // --- Timeline window (inclusive bounds on quote_date) ------------------
   if (filters.since) {
     result = result.filter((q) => q.quote_date >= filters.since!);
@@ -74,30 +142,9 @@ export function applyFeed(
     result = result.filter((q) => q.quote_date <= filters.before!);
   }
 
-  // --- Fuzzy keyword search ---------------------------------------------
-  const query = filters.query.trim();
-  if (query) {
-    const fuse = new Fuse(result, {
-      includeScore: true,
-      ignoreLocation: true,
-      threshold: 0.4, // tolerant of minor typos / variations
-      minMatchCharLength: 2,
-      keys: [
-        { name: "primary_quotee", weight: 2 },
-        { name: "quote_context", weight: 1 },
-        { name: "tags", weight: 1.5 },
-        { name: "lines.speaker", weight: 1 },
-        { name: "lines.line_text", weight: 1.5 },
-        { name: "lines.line_context", weight: 0.5 },
-      ],
-    });
-    result = fuse.search(query).map((r) => r.item);
-
-    // When fuzzy-searching we keep Fuse's relevance order *unless* the user is
-    // also sorting; sorting always wins for predictability.
-  }
-
   // --- Sorting -----------------------------------------------------------
+  // Always applied: the explicit sort axis wins over Fuse's relevance
+  // ranking so result order stays predictable.
   const dir = filters.sortDir === "asc" ? 1 : -1;
   result = [...result].sort(
     (a, b) => (sortInstant(a, filters.sortKey) - sortInstant(b, filters.sortKey)) * dir,

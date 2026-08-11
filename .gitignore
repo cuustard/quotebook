@@ -26,3 +26,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# One-off migration artifact (contains personal quote data)
+quoteguessgame-import.json

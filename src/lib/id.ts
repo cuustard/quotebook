@@ -15,14 +15,20 @@ let counter = 0;
 /** Monotonic, sortable fractional epoch-ms used for LWW comparisons. */
 export function tick(): number {
   const ms = Date.now();
-  if (ms === lastMs) {
-    // up to 1000 distinct ticks per ms before we roll into the next ms band
-    counter = Math.min(counter + 1, 999);
-  } else {
+  if (ms > lastMs) {
     lastMs = ms;
     counter = 0;
+  } else {
+    // Same millisecond, or the wall clock stepped backwards — keep counting
+    // within the last band so ticks stay strictly increasing either way.
+    counter += 1;
+    if (counter > 999) {
+      // >1000 ticks in one ms: roll into the next ms band instead of tying.
+      lastMs += 1;
+      counter = 0;
+    }
   }
-  return ms + counter / 1000;
+  return lastMs + counter / 1000;
 }
 
 /** ISO-8601 timestamp for the current instant (drops the sub-ms fraction). */
@@ -50,12 +56,22 @@ export function uuid(): string {
 
 /** Short, human-friendly invite code (no ambiguous characters). */
 export function inviteCode(len = 8): string {
+  if (typeof crypto === "undefined" || !crypto.getRandomValues) {
+    // Never fall back to predictable codes — these gate quotebook access.
+    throw new Error("Secure random source unavailable.");
+  }
   const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  // Rejection sampling: bytes >= limit would bias `% alphabet.length`.
+  const limit = 256 - (256 % alphabet.length);
   let out = "";
-  const bytes = new Uint8Array(len);
-  if (typeof crypto !== "undefined") crypto.getRandomValues(bytes);
-  for (let i = 0; i < len; i++) {
-    out += alphabet[bytes[i] % alphabet.length];
+  while (out.length < len) {
+    const bytes = crypto.getRandomValues(new Uint8Array(len * 2));
+    for (const b of bytes) {
+      if (b < limit) {
+        out += alphabet[b % alphabet.length];
+        if (out.length === len) break;
+      }
+    }
   }
   return out;
 }

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 html,
@@ -11,43 +11,59 @@ body {
   height: 100%;
 }
 
+html {
+  /* Reserve the scrollbar's width up front. Otherwise content that grows
+     tall enough to introduce a scrollbar (e.g. active filter chips wrapping
+     onto more lines) shifts the whole page left by the scrollbar's width. */
+  scrollbar-gutter: stable;
+}
+
 body {
   @apply bg-paper text-ink antialiased;
 }
 
-/* Thin, unobtrusive scrollbars for the feed columns. */
+/* Thin, unobtrusive scrollbars — Discord's are a faint lightening of the
+   surface underneath, not a filled bar. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d8d2c6 transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background-color: #d8d2c6;
+  background-color: rgba(255, 255, 255, 0.16);
   border-radius: 9999px;
 }
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.28);
+}
 
-/* Utility: focus ring consistent with the warm palette. */
 @layer components {
   .qb-input {
-    @apply w-full rounded-lg border border-black/10 bg-paper-raised px-3 py-2 text-sm
+    /* Recessed "well" rather than an outlined field — Discord's text inputs
+       are a flat, darker-than-the-card surface with no border until focus. */
+    @apply w-full rounded-lg border border-transparent bg-surface-sunken px-3 py-2 text-sm
       text-ink placeholder:text-ink-muted/60 outline-none transition
-      focus:border-accent/50 focus:ring-2 focus:ring-accent/20;
+      focus:border-accent/60 focus:ring-2 focus:ring-accent/30;
   }
   .qb-btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
       font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
   }
   .qb-btn-primary {
-    @apply qb-btn bg-accent text-white hover:bg-accent/90;
+    /* An explicit darker shade on hover/active (not just opacity) — matches
+       blurple's #5865F2 → #4752C4 hover step instead of just fading it. */
+    @apply qb-btn bg-accent text-white hover:bg-[#4752c4] active:bg-[#3c45a5];
   }
   .qb-btn-ghost {
-    @apply qb-btn text-ink hover:bg-black/5;
+    @apply qb-btn text-ink hover:bg-white/[0.06];
   }
   .qb-card {
-    @apply rounded-2xl border border-black/[0.06] bg-paper-raised shadow-sm;
+    /* Flat surfaces, no drop shadow — Discord separates cards by a subtle
+       fill/border shift, not elevation. */
+    @apply rounded-lg border border-white/[0.06] bg-paper-raised;
   }
   .qb-chip {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;

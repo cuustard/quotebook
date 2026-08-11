@@ -34,11 +34,15 @@ export interface Quotebook extends SyncMeta {
 export interface Quote extends SyncMeta {
   id: string;
   quotebook_id: string;
-  primary_quotee: string;
   /** ISO date (YYYY-MM-DD) — when the quote actually happened. */
   quote_date: string;
   /** 24h time (HH:mm) — when the quote actually happened. */
   quote_time: string;
+  /**
+   * The situation the whole exchange happened in ("walking in the dark").
+   * Distinct from a line's `line_context`, which annotates one utterance
+   * ("sarcastically"). Empty string when there's nothing to say.
+   */
   quote_context: string;
   tags: string[];
   created_by: string | null;
@@ -60,6 +64,8 @@ export interface QuotebookMember {
   quotebook_id: string;
   user_id: string;
   joined_at: string;
+  /** Local-only: membership row not yet pushed to Supabase. */
+  _dirty?: 0 | 1;
 }
 
 export interface InviteCode {
@@ -76,6 +82,39 @@ export interface QuoteWithLines extends Quote {
   lines: QuoteLine[];
 }
 
+// --- Quick Add captures (local-only, never synced) --------------------------
+
+/**
+ * Capture lifecycle:
+ *   pending → parsing → parsed → done      (AI path, Phase 1)
+ *   pending ————————————————————→ done      (manual conversion)
+ *   parsing → failed → done                 (parse rejected; manual rescue)
+ *
+ * "parsed" doubles as the review queue: the quote exists, the capture waits
+ * for the user to confirm it.
+ */
+export type CaptureStatus = "pending" | "parsing" | "parsed" | "failed" | "done";
+
+export interface Capture {
+  id: string;
+  /** Raw input, verbatim. Never mutated — it's the provenance record. */
+  text: string;
+  /** Book the quote will land in (chosen at capture time). */
+  quotebook_id: string;
+  created_at: string;
+  status: CaptureStatus;
+  /** Set once a quote exists (AI-parsed or manually converted). */
+  quote_id: string | null;
+  /** Parse self-assessment; low-confidence parses sort first for review. */
+  confidence: "high" | "low" | null;
+  /** Human-readable reason when status is "failed". */
+  error: string | null;
+  /** Parse attempts so far (drives retry backoff). */
+  attempts: number;
+  /** ISO timestamp of the most recent parse attempt. */
+  attempted_at: string | null;
+}
+
 // --- Feed control value objects -------------------------------------------
 
 export type SortKey = "quote_date" | "created_at";
@@ -86,6 +125,8 @@ export interface FeedFilters {
   query: string;
   /** Selected quotees/speakers; a line match surfaces the whole block. */
   speakers: string[];
+  /** AND = every selected speaker must have a line in the quote; OR = any. */
+  speakerMode: "and" | "or";
   /** Selected tags. */
   tags: string[];
   /** AND = quote must contain every selected tag; OR = any. */
@@ -93,6 +134,12 @@ export interface FeedFilters {
   /** Inclusive ISO date bounds (YYYY-MM-DD) or null. */
   since: string | null;
   before: string | null;
+  /** Hours-of-day (0–23) to keep. Empty = no hour filter. */
+  hours: number[];
+  /** Weekdays to keep, Monday-first (0=Mon … 6=Sun). Empty = no filter. */
+  weekdays: number[];
+  /** Show only quotes missing something mandatory (see `lib/integrity.ts`). */
+  onlyIncomplete: boolean;
   sortKey: SortKey;
   sortDir: SortDir;
 }
@@ -100,10 +147,14 @@ export interface FeedFilters {
 export const DEFAULT_FILTERS: FeedFilters = {
   query: "",
   speakers: [],
+  speakerMode: "or", // speakers default to "Any"
   tags: [],
-  tagMode: "or",
+  tagMode: "and", // tags default to "All"
   since: null,
   before: null,
+  hours: [],
+  weekdays: [],
+  onlyIncomplete: false,
   sortKey: "quote_date",
   sortDir: "desc",
 };
@@ -111,3 +162,5 @@ export const DEFAULT_FILTERS: FeedFilters = {
 // --- Field-length sanity caps (keep the feed scannable) --------------------
 export const MAX_LINE_TEXT = 500;
 export const MAX_CONTEXT = 1000;
+/** Cap for the quote-level situation line. */
+export const MAX_QUOTE_CONTEXT = 500;

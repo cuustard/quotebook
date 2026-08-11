@@ -47,6 +47,7 @@ export async function claimLocalData(userId: string): Promise<void> {
             quotebook_id: book.id,
             user_id: userId,
             joined_at: nowIso(),
+            _dirty: 1,
           });
         }
       }

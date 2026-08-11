@@ -50,19 +50,33 @@ export async function listInvites(quotebookId: string): Promise<InviteCode[]> {
     .eq("quotebook_id", quotebookId)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as InviteCode[];
+
+  // Garbage-collect expired codes while we're here (best-effort) and only
+  // surface the live ones.
+  const now = Date.now();
+  const all = (data ?? []) as InviteCode[];
+  const expired = all.filter((i) => new Date(i.expires_at).getTime() < now);
+  if (expired.length > 0) {
+    void supabase
+      .from("invite_codes")
+      .delete()
+      .in("id", expired.map((i) => i.id));
+  }
+  return all.filter((i) => new Date(i.expires_at).getTime() >= now);
 }
 
 export async function revokeInvite(id: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  await supabase.from("invite_codes").delete().eq("id", id);
+  const { error } = await supabase.from("invite_codes").delete().eq("id", id);
+  if (error) throw error;
   await db.invites.delete(id);
 }
 
 /**
- * Redeem a code: validates it, joins the user to the book, and pulls the book's
- * data down via a sync pass. Returns the joined quotebook id.
+ * Redeem a code via the `redeem_invite` RPC, which validates the code and
+ * expiry SERVER-side (RLS forbids clients from inserting themselves into
+ * books they don't own). Returns the joined quotebook id.
  */
 export async function redeemInvite(rawCode: string): Promise<string> {
   const supabase = getSupabase();
@@ -71,31 +85,11 @@ export async function redeemInvite(rawCode: string): Promise<string> {
     throw new Error("Sign in to join a quotebook.");
   }
 
-  const code = rawCode.trim().toUpperCase();
-  const { data: invite, error } = await supabase
-    .from("invite_codes")
-    .select("*")
-    .eq("code", code)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!invite) throw new Error("Invite code not found.");
-  if (new Date(invite.expires_at).getTime() < Date.now()) {
-    throw new Error("This invite code has expired.");
-  }
-
-  // Flat permissions model: simply add the user as a member.
-  const { error: joinError } = await supabase.from("quotebook_members").upsert(
-    {
-      id: uuid(),
-      quotebook_id: invite.quotebook_id,
-      user_id: userId,
-      joined_at: nowIso(),
-    },
-    { onConflict: "quotebook_id,user_id" },
-  );
-  if (joinError) throw joinError;
+  const { data, error } = await supabase.rpc("redeem_invite", {
+    p_code: rawCode.trim().toUpperCase(),
+  });
+  if (error) throw new Error(error.message);
 
   requestSync(); // pull the newly-accessible book + its quotes into Dexie
-  return invite.quotebook_id as string;
+  return data as string;
 }

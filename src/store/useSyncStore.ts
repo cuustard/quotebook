@@ -13,6 +13,7 @@
 
 import { create } from "zustand";
 import { getDeviceId } from "@/db/dexie";
+import { getCurrentUserId } from "@/lib/session";
 import { getSupabase } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -66,6 +67,9 @@ let channel: RealtimeChannel | null = null;
 let channelBookId: string | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let pruneTimer: ReturnType<typeof setInterval> | null = null;
+// Bumped by every joinBook/leaveBook. `joinBook` awaits twice, so it compares
+// its own generation afterwards to detect that a newer join superseded it.
+let joinGeneration = 0;
 const editingByMe = new Set<string>();
 
 export const useSyncStore = create<SyncState>((set, get) => ({
@@ -89,18 +93,34 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   joinBook: async (bookId) => {
     const supabase = getSupabase();
-    if (!supabase) return; // guest / offline: no collaborators to coordinate with
+    // Guests have no collaborators to coordinate with, and the private
+    // presence channel requires an authenticated member anyway.
+    if (!supabase || !getCurrentUserId()) return;
     if (channelBookId === bookId && channel) return; // already joined
 
     get().leaveBook();
+    // Claim the join synchronously. `channelBookId` used to be assigned only
+    // after `await subscribe()` below, so two overlapping joins (React Strict
+    // Mode's double-mounted effect, or a fast book switch) both got past the
+    // guard above: the first channel was orphaned — never removed, still
+    // receiving — and its prune interval leaked because the second overwrote
+    // the timer handle.
+    channelBookId = bookId;
+    const myJoin = ++joinGeneration;
+    const superseded = () => myJoin !== joinGeneration;
+
     const deviceId = await getDeviceId();
+    if (superseded()) return;
     set({ myDeviceId: deviceId, editing: {} });
 
-    channel = supabase.channel(`presence:${bookId}`, {
-      config: { broadcast: { self: false } },
+    // `private: true` → gated by the realtime.messages RLS policies in
+    // supabase/schema.sql, so only members of this book can listen or send.
+    const nextChannel = supabase.channel(`presence:${bookId}`, {
+      config: { private: true, broadcast: { self: false } },
     });
+    channel = nextChannel;
 
-    channel.on("broadcast", { event: "editing" }, ({ payload }) => {
+    nextChannel.on("broadcast", { event: "editing" }, ({ payload }) => {
       const beacon = payload as EditingBeacon & { action: "start" | "stop" };
       set((state) => {
         const next = { ...state.editing };
@@ -119,10 +139,16 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       });
     });
 
-    await channel.subscribe();
-    channelBookId = bookId;
+    await nextChannel.subscribe();
+    // A newer join (or a leaveBook) landed while we were subscribing — tear
+    // this one down instead of leaving it live behind the current channel.
+    if (superseded()) {
+      void supabase.removeChannel(nextChannel);
+      return;
+    }
 
     // Periodically drop stale beacons (e.g. an editor that closed its tab).
+    if (pruneTimer) clearInterval(pruneTimer);
     pruneTimer = setInterval(() => {
       const cutoff = Date.now() - PRESENCE_TTL_MS;
       set((state) => {
@@ -139,6 +165,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   leaveBook: () => {
     const supabase = getSupabase();
+    // Invalidate any join still awaiting subscribe(), so it tears its own
+    // channel down rather than installing it after we've left.
+    joinGeneration++;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (pruneTimer) clearInterval(pruneTimer);
     heartbeatTimer = null;

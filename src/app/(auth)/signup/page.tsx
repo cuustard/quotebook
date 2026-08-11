@@ -39,7 +39,7 @@ export default function SignupPage() {
   if (needsConfirm && !user) {
     return (
       <div>
-        <h1 className="mb-2 font-serif text-2xl font-semibold">Check your inbox</h1>
+        <h1 className="mb-2 font-heading text-2xl font-semibold">Check your inbox</h1>
         <p className="text-sm text-ink-muted">
           We sent a confirmation link to <span className="font-medium text-ink">{email}</span>. Confirm it,
           then sign in — your guest quotes will migrate automatically.
@@ -51,21 +51,21 @@ export default function SignupPage() {
 
   return (
     <div>
-      <h1 className="mb-1 font-serif text-2xl font-semibold">Secure your account</h1>
+      <h1 className="mb-1 font-heading text-2xl font-semibold">Secure your account</h1>
       <p className="mb-5 text-sm text-ink-muted">
         Your existing guest quotes will migrate seamlessly when you sign up.
       </p>
 
       {!isSupabaseConfigured && (
-        <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-          Supabase isn't configured, so accounts are disabled. Quotebook still works fully as a guest.
+        <p className="mb-4 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-300">
+          Supabase isn&apos;t configured, so accounts are disabled. Quotebook still works fully as a guest.
         </p>
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <input className="qb-input" type="email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input className="qb-input" type="password" placeholder="Password (min 6 chars)" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <button type="submit" disabled={busy || !isSupabaseConfigured} className="qb-btn-primary">
           {busy ? "Creating…" : "Create account"}
         </button>

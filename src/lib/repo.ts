@@ -11,6 +11,8 @@ import { db } from "@/db/dexie";
 import { nowIso, tick, tickToIso, uuid } from "@/lib/id";
 import { getCurrentUserId } from "@/lib/session";
 import { requestSync } from "@/lib/sync";
+import { normalizeTags } from "@/lib/tags";
+import { MAX_CONTEXT, MAX_LINE_TEXT, MAX_QUOTE_CONTEXT } from "@/lib/types";
 import type {
   Quote,
   QuoteLine,
@@ -58,24 +60,68 @@ function fresh<T extends Record<string, unknown>>(fields: T): T & SyncMeta {
 // =========================================================================
 
 /**
+ * Deterministically choose the anchored private book: prefer one owned by the
+ * current user, then the oldest. Shared by boot and the dashboard so both
+ * always agree on which book is "the" private one, even if a sync race ever
+ * produced more than one.
+ */
+export function pickPrivateBook(
+  books: Quotebook[],
+  userId: string | null,
+): Quotebook | null {
+  // id tiebreaker: duplicate private books born from a race share the same
+  // created_at millisecond — the pick must still be deterministic.
+  const priv = books
+    .filter((b) => b.is_private && !b.deleted)
+    .sort((a, b) => (a.created_at + a.id < b.created_at + b.id ? -1 : 1));
+  if (userId) {
+    const owned = priv.find((b) => b.owner_id === userId);
+    if (owned) return owned;
+  }
+  return priv[0] ?? null;
+}
+
+/**
  * Guarantee the user always has their single anchored Private Quotebook.
- * Runs on boot in both guest and authenticated states.
+ * Runs on boot (after auth resolves and, when signed in, after a first pull —
+ * creating one before pulling would duplicate the private book on every new
+ * device).
  */
 export async function ensurePrivateQuotebook(): Promise<Quotebook> {
   const userId = getCurrentUserId();
-  const existing = await db.quotebooks
-    .filter((b) => b.is_private === true && !b.deleted)
-    .first();
-  if (existing) return existing;
+  // Transactional so concurrent boots (React Strict Mode double-mounts the
+  // Providers effect in dev) serialize on the read-then-create instead of
+  // both seeing an empty table and each minting a private book.
+  const book = await db.transaction("rw", db.quotebooks, db.quotes, async () => {
+    const books = await db.quotebooks.toArray();
+    const existing = pickPrivateBook(books, userId);
+    if (existing) {
+      // Self-heal duplicates left by past races: retire any OTHER private
+      // book, but only if it holds no quotes — never delete content.
+      for (const b of books) {
+        if (b.is_private && !b.deleted && b.id !== existing.id) {
+          const quoteCount = await db.quotes
+            .where("quotebook_id")
+            .equals(b.id)
+            .count();
+          if (quoteCount === 0) {
+            await db.quotebooks.put(stamp(b, { deleted: true }));
+          }
+        }
+      }
+      return existing;
+    }
 
-  const book = fresh({
-    id: uuid(),
-    owner_id: userId,
-    name: GUEST_BOOK_NAME,
-    is_private: true,
-    created_at: nowIso(),
-  }) as Quotebook;
-  await db.quotebooks.put(book);
+    const created = fresh({
+      id: uuid(),
+      owner_id: userId,
+      name: GUEST_BOOK_NAME,
+      is_private: true,
+      created_at: nowIso(),
+    }) as Quotebook;
+    await db.quotebooks.put(created);
+    return created;
+  });
   requestSync();
   return book;
 }
@@ -98,6 +144,7 @@ export async function createQuotebook(name: string): Promise<Quotebook> {
       quotebook_id: book.id,
       user_id: userId,
       joined_at: nowIso(),
+      _dirty: 1,
     });
   }
   requestSync();
@@ -114,14 +161,25 @@ export async function renameQuotebook(id: string, name: string): Promise<void> {
 export async function deleteQuotebook(id: string): Promise<void> {
   const book = await db.quotebooks.get(id);
   if (!book || book.is_private) return; // never delete the anchored private book
+
   // Soft-delete the book and cascade soft-deletes to its quotes/lines.
-  await db.quotebooks.put(stamp(book, { deleted: true }));
-  const quotes = await db.quotes.where("quotebook_id").equals(id).toArray();
-  for (const q of quotes) {
-    await db.quotes.put(stamp(q, { deleted: true }));
-    const lines = await db.quote_lines.where("quote_id").equals(q.id).toArray();
-    for (const l of lines) await db.quote_lines.put(stamp(l, { deleted: true }));
-  }
+  // Transactional and batched: this used to be a sequential put per quote plus
+  // a per-quote line query (an N+1), and being outside a transaction meant an
+  // interrupted delete could leave the book tombstoned with its quotes live.
+  await db.transaction("rw", db.quotebooks, db.quotes, db.quote_lines, async () => {
+    await db.quotebooks.put(stamp(book, { deleted: true }));
+
+    const quotes = await db.quotes.where("quotebook_id").equals(id).toArray();
+    // Scan + filter rather than anyOf() over every quote id — see the note in
+    // getQuotesWithLines: per-key index seeks are far slower at this scale.
+    const wanted = new Set(quotes.map((q) => q.id));
+    const lines = (await db.quote_lines.toArray()).filter((l) =>
+      wanted.has(l.quote_id),
+    );
+
+    await db.quotes.bulkPut(quotes.map((q) => stamp(q, { deleted: true })));
+    await db.quote_lines.bulkPut(lines.map((l) => stamp(l, { deleted: true })));
+  });
   requestSync();
 }
 
@@ -136,10 +194,23 @@ export interface LineInput {
   line_context: string;
 }
 
+/**
+ * Trim + hard-cap line fields. The caps are also enforced by CHECK
+ * constraints in Postgres, so exceeding them locally would strand the record
+ * in the outbox — never persist more than the schema accepts.
+ */
+function cleanLine(line: LineInput): Pick<QuoteLine, "speaker" | "line_text" | "line_context"> {
+  return {
+    speaker: line.speaker.trim(),
+    line_text: line.line_text.trim().slice(0, MAX_LINE_TEXT),
+    line_context: line.line_context.trim().slice(0, MAX_CONTEXT),
+  };
+}
+
 export interface QuoteInput {
-  primary_quotee: string;
   quote_date: string;
   quote_time: string;
+  /** Situation for the whole exchange; "" when there isn't one. */
   quote_context: string;
   tags: string[];
   lines: LineInput[];
@@ -155,10 +226,9 @@ export async function createQuote(
   const quote = fresh({
     id: quoteId,
     quotebook_id: quotebookId,
-    primary_quotee: input.primary_quotee.trim(),
     quote_date: input.quote_date,
     quote_time: input.quote_time,
-    quote_context: input.quote_context.trim(),
+    quote_context: input.quote_context.trim().slice(0, MAX_QUOTE_CONTEXT),
     tags: normalizeTags(input.tags),
     created_by: userId,
     created_at: nowIso(),
@@ -169,9 +239,7 @@ export async function createQuote(
     fresh({
       id: line.id ?? uuid(),
       quote_id: quoteId,
-      speaker: line.speaker.trim(),
-      line_text: line.line_text.trim(),
-      line_context: line.line_context.trim(),
+      ...cleanLine(line),
       order_index: index,
     }) as QuoteLine,
   );
@@ -201,10 +269,9 @@ export async function updateQuote(
   await db.transaction("rw", db.quotes, db.quote_lines, async () => {
     await db.quotes.put(
       stamp(quote, {
-        primary_quotee: input.primary_quotee.trim(),
         quote_date: input.quote_date,
         quote_time: input.quote_time,
-        quote_context: input.quote_context.trim(),
+        quote_context: input.quote_context.trim().slice(0, MAX_QUOTE_CONTEXT),
         tags: normalizeTags(input.tags),
         version: quote.version + 1,
       }),
@@ -217,28 +284,28 @@ export async function updateQuote(
     const existingById = new Map(existing.map((l) => [l.id, l]));
     const keptIds = new Set<string>();
 
+    // Collect every line write, then flush once. Writing them one await at a
+    // time held the transaction open across N round trips.
+    const writes: QuoteLine[] = [];
+
     for (let index = 0; index < input.lines.length; index++) {
       const line = input.lines[index];
       const prev = line.id ? existingById.get(line.id) : undefined;
       if (prev) {
         keptIds.add(prev.id);
-        await db.quote_lines.put(
+        writes.push(
           stamp(prev, {
-            speaker: line.speaker.trim(),
-            line_text: line.line_text.trim(),
-            line_context: line.line_context.trim(),
+            ...cleanLine(line),
             order_index: index,
             deleted: false,
           }),
         );
       } else {
-        await db.quote_lines.put(
+        writes.push(
           fresh({
             id: line.id ?? uuid(),
             quote_id: quoteId,
-            speaker: line.speaker.trim(),
-            line_text: line.line_text.trim(),
-            line_context: line.line_context.trim(),
+            ...cleanLine(line),
             order_index: index,
           }) as QuoteLine,
         );
@@ -248,9 +315,11 @@ export async function updateQuote(
     // Tombstone lines the user removed.
     for (const prev of existing) {
       if (!keptIds.has(prev.id) && !prev.deleted) {
-        await db.quote_lines.put(stamp(prev, { deleted: true }));
+        writes.push(stamp(prev, { deleted: true }));
       }
     }
+
+    await db.quote_lines.bulkPut(writes);
   });
   requestSync();
 }
@@ -261,7 +330,9 @@ export async function deleteQuote(quoteId: string): Promise<void> {
   await db.transaction("rw", db.quotes, db.quote_lines, async () => {
     await db.quotes.put(stamp(quote, { deleted: true }));
     const lines = await db.quote_lines.where("quote_id").equals(quoteId).toArray();
-    for (const l of lines) await db.quote_lines.put(stamp(l, { deleted: true }));
+    // One batched write rather than holding the transaction open across a
+    // sequential put per line.
+    await db.quote_lines.bulkPut(lines.map((l) => stamp(l, { deleted: true })));
   });
   requestSync();
 }
@@ -279,12 +350,16 @@ export async function getQuotesWithLines(
     .filter((q) => !q.deleted)
     .toArray();
 
-  const quoteIds = quotes.map((q) => q.id);
-  const allLines = await db.quote_lines
-    .where("quote_id")
-    .anyOf(quoteIds)
-    .filter((l) => !l.deleted)
-    .toArray();
+  // Deliberately a full scan of quote_lines filtered in memory, NOT
+  // `.where("quote_id").anyOf(quoteIds)`. anyOf does one index seek per key, so
+  // on a book with a few thousand quotes it degrades badly — measured ~4.9s vs
+  // ~1.0s for a 2000-quote book, and 25x worse when the book is a small slice
+  // of a large table. This is the feed's read path and useLiveQuery re-runs it
+  // on every data change, so it is the one query most worth keeping linear.
+  const wanted = new Set(quotes.map((q) => q.id));
+  const allLines = (await db.quote_lines.toArray()).filter(
+    (l) => !l.deleted && wanted.has(l.quote_id),
+  );
 
   const linesByQuote = new Map<string, QuoteLine[]>();
   for (const line of allLines) {
@@ -301,20 +376,3 @@ export async function getQuotesWithLines(
   }));
 }
 
-// =========================================================================
-// Helpers
-// =========================================================================
-
-/** Lowercase, trim, de-dupe and drop empties. */
-export function normalizeTags(tags: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (t && !seen.has(t)) {
-      seen.add(t);
-      out.push(t);
-    }
-  }
-  return out;
-}

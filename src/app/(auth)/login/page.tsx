@@ -26,19 +26,19 @@ export default function LoginPage() {
 
   return (
     <div>
-      <h1 className="mb-1 font-serif text-2xl font-semibold">Welcome back</h1>
+      <h1 className="mb-1 font-heading text-2xl font-semibold">Welcome back</h1>
       <p className="mb-5 text-sm text-ink-muted">Sign in to sync your quotebooks.</p>
 
       {!isSupabaseConfigured && (
-        <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-          Supabase isn't configured, so accounts are disabled. You can still use Quotebook as a guest.
+        <p className="mb-4 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-300">
+          Supabase isn&apos;t configured, so accounts are disabled. You can still use Quotebook as a guest.
         </p>
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <input className="qb-input" type="email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input className="qb-input" type="password" placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <button type="submit" disabled={busy || !isSupabaseConfigured} className="qb-btn-primary">
           {busy ? "Signing in…" : "Sign in"}
         </button>

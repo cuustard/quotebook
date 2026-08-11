@@ -30,8 +30,8 @@ export function QuotebookCard({
       <div className="mb-3 flex items-start justify-between gap-2">
         <span
           className={cn(
-            "grid h-10 w-10 place-items-center rounded-xl font-serif text-lg font-bold",
-            primary ? "bg-accent text-white" : "bg-black/5 text-ink",
+            "grid h-10 w-10 place-items-center rounded-xl font-heading text-lg font-bold",
+            primary ? "bg-accent text-white" : "bg-white/5 text-ink",
           )}
         >
           {book.name.charAt(0).toUpperCase() || "Q"}
@@ -39,14 +39,14 @@ export function QuotebookCard({
         <span
           className={cn(
             "qb-chip",
-            book.is_private ? "bg-black/5 text-ink-muted" : "bg-emerald-50 text-emerald-700",
+            book.is_private ? "bg-white/5 text-ink-muted" : "bg-emerald-500/10 text-emerald-400",
           )}
         >
           {book.is_private ? "Private" : "Collaborative"}
         </span>
       </div>
 
-      <h3 className="font-serif text-lg font-semibold text-ink group-hover:text-accent">
+      <h3 className="font-heading text-lg font-semibold text-ink group-hover:text-accent">
         {book.name}
       </h3>
 

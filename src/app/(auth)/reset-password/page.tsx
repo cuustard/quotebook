@@ -58,7 +58,7 @@ export default function ResetPasswordPage() {
 
   return (
     <div>
-      <h1 className="mb-1 font-serif text-2xl font-semibold">
+      <h1 className="mb-1 font-heading text-2xl font-semibold">
         {recovery ? "Set a new password" : "Reset password"}
       </h1>
       <p className="mb-5 text-sm text-ink-muted">
@@ -66,8 +66,8 @@ export default function ResetPasswordPage() {
       </p>
 
       {!isSupabaseConfigured && (
-        <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-          Supabase isn't configured, so password recovery is unavailable.
+        <p className="mb-4 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-300">
+          Supabase isn&apos;t configured, so password recovery is unavailable.
         </p>
       )}
 
@@ -83,7 +83,7 @@ export default function ResetPasswordPage() {
         </form>
       )}
 
-      {msg && <p className={`mt-3 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</p>}
+      {msg && <p className={`mt-3 text-sm ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>}
 
       <p className="mt-4 text-sm text-ink-muted">
         <Link href="/login" className="text-accent hover:underline">Back to sign in</Link>
