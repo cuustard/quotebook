@@ -263,7 +263,7 @@ describe("deleteQuotebook", () => {
 });
 
 describe("pickPrivateBook", () => {
-  const mk = (over: Partial<QuotebookRow>) =>
+  const mk = () =>
     ({
       id: "x",
       owner_id: null,
@@ -276,22 +276,22 @@ describe("pickPrivateBook", () => {
     }) as QuotebookRow & { [k: string]: unknown };
 
   it("prefers a book owned by the current user", () => {
-    const mine = { ...mk({}), id: "b", owner_id: "user-1" };
-    const theirs = { ...mk({}), id: "a", owner_id: "user-2" };
+    const mine = { ...mk(), id: "b", owner_id: "user-1" };
+    const theirs = { ...mk(), id: "a", owner_id: "user-2" };
     expect(pickPrivateBook([theirs, mine], "user-1")?.id).toBe("b");
   });
 
   it("breaks a same-timestamp tie by id so the choice is deterministic", () => {
     // Duplicate private books born from a sync race share a created_at ms.
-    const a = { ...mk({}), id: "aaa", owner_id: null };
-    const b = { ...mk({}), id: "bbb", owner_id: null };
+    const a = { ...mk(), id: "aaa", owner_id: null };
+    const b = { ...mk(), id: "bbb", owner_id: null };
     expect(pickPrivateBook([b, a], null)?.id).toBe("aaa");
     expect(pickPrivateBook([a, b], null)?.id).toBe("aaa");
   });
 
   it("ignores deleted and non-private books", () => {
-    const deleted = { ...mk({}), id: "d", deleted: true };
-    const shared = { ...mk({}), id: "s", is_private: false };
+    const deleted = { ...mk(), id: "d", deleted: true };
+    const shared = { ...mk(), id: "s", is_private: false };
     expect(pickPrivateBook([deleted, shared], null)).toBeNull();
   });
 });

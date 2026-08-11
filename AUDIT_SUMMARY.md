@@ -253,9 +253,29 @@ IndexedDB inspected directly:
 
 ---
 
+## React Compiler lint (surfaced by the Next 16 upgrade)
+
+`eslint-config-next@16` enables React Compiler-aware hooks rules. They flag five
+call sites that **predate the upgrade** — all working code, none introduced by it. They
+are set to `warn` in `eslint.config.mjs` rather than fixed, because rewriting five
+components' state flow does not belong in a dependency upgrade and this repo has no React
+rendering tests to catch a mistake made while doing it.
+
+| Rule | Location | Pattern |
+|---|---|---|
+| `react-hooks/set-state-in-effect` | `manage/page.tsx:124` | `useEffect(() => setName(book.name), [book.name])` — prop→state sync |
+| `react-hooks/purity` | `manage/page.tsx:204` | `Date.now()` called during render to compute invite expiry |
+| `react-hooks/set-state-in-effect` | `quick/page.tsx:75` | `setText(...)` in the share-target mount effect |
+| `react-hooks/set-state-in-effect` | `QuoteModal.tsx:67` | `setError(null)` when the modal opens |
+| `react-hooks/set-state-in-effect` | `MultiSelectDropdown.tsx:38` | `setQuery("")` when the dropdown opens |
+
+Each is a "sync state on an external trigger" pattern that causes an extra render rather
+than a bug. Worth fixing as its own pass — ideally alongside adding rendering tests — after
+which the two rules should go back to `error`.
+
 ## Not actioned (needs your decision)
 
-**`npm audit`: 7 high-severity advisories (6 Next.js, 1 postcss).**
+**RESOLVED — upgraded to Next 16.3.0 / React 19.2 on `chore/next-16-upgrade`; `npm audit` now reports 0 vulnerabilities.** The original finding and reasoning are kept below for the record.
 
 The only available fix is `next@16.3.0` — a **major upgrade from 14.2.35**. I did not perform it,
 for three reasons:
