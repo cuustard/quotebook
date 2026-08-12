@@ -203,11 +203,13 @@ export function FeedControls({
             empty={speakers.length === 0}
             aside={
               <Segmented
+                label="How to combine selected quotees"
                 value={filters.speakerMode}
                 onChange={(v) => patch({ speakerMode: v as FeedFilters["speakerMode"] })}
                 options={[
-                  { value: "or", label: "Any (OR)" },
-                  { value: "and", label: "All (AND)" },
+                  { value: "or", label: "Any", title: "Any of them speaks in the quote" },
+                  { value: "and", label: "All", title: "All of them speak in the quote — others may too" },
+                  { value: "only", label: "Only", title: "Nobody else speaks in the quote" },
                 ]}
               />
             }
@@ -226,11 +228,13 @@ export function FeedControls({
             empty={tags.length === 0}
             aside={
               <Segmented
+                label="How to combine selected tags"
                 value={filters.tagMode}
                 onChange={(v) => patch({ tagMode: v as FeedFilters["tagMode"] })}
                 options={[
-                  { value: "or", label: "Any (OR)" },
-                  { value: "and", label: "All (AND)" },
+                  { value: "or", label: "Any", title: "Has at least one of these tags" },
+                  { value: "and", label: "All", title: "Has all of these tags — others allowed" },
+                  { value: "only", label: "Only", title: "Has no tags outside this selection" },
                 ]}
               />
             }
@@ -332,37 +336,65 @@ function FilterGroup({
   );
 }
 
-/** A two-way switch — this only ever has two options, so it's a single click
- * surface: clicking anywhere on it (either label) flips to the other side,
- * rather than each label being its own "select me" button. */
+/**
+ * A segmented switch.
+ *
+ * With exactly TWO options it stays a single click surface — clicking anywhere
+ * on it (either label) flips to the other side, which is the nicer affordance
+ * for a binary toggle and is how the sort switch has always behaved. With
+ * three or more that trick is meaningless, so each segment becomes its own
+ * button that selects itself.
+ */
 function Segmented<T extends string>({
   value,
   onChange,
   options,
+  label,
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: [{ value: T; label: string }, { value: T; label: string }];
+  options: ReadonlyArray<{ value: T; label: string; title?: string }>;
+  /** Accessible name for the group when segments are individually selectable. */
+  label?: string;
 }) {
-  const [left, right] = options;
-  const flip = () => onChange(value === left.value ? right.value : left.value);
+  const shell = "flex shrink-0 rounded-lg border border-white/10 bg-paper p-0.5 text-xs";
+  const seg = (active: boolean) =>
+    cn(
+      "flex-1 whitespace-nowrap rounded-md px-2.5 py-1 text-center font-medium transition",
+      active ? "bg-accent text-white" : "text-ink-muted",
+    );
+
+  if (options.length === 2) {
+    const [left, right] = options;
+    return (
+      <button
+        type="button"
+        onClick={() => onChange(value === left.value ? right.value : left.value)}
+        className={shell}
+      >
+        {options.map((o) => (
+          <span key={o.value} className={seg(value === o.value)}>
+            {o.label}
+          </span>
+        ))}
+      </button>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={flip}
-      className="flex shrink-0 rounded-lg border border-white/10 bg-paper p-0.5 text-xs"
-    >
+    <div className={shell} role="group" aria-label={label}>
       {options.map((o) => (
-        <span
+        <button
           key={o.value}
-          className={cn(
-            "flex-1 whitespace-nowrap rounded-md px-2.5 py-1 text-center font-medium transition",
-            value === o.value ? "bg-accent text-white" : "text-ink-muted",
-          )}
+          type="button"
+          onClick={() => onChange(o.value)}
+          title={o.title}
+          aria-pressed={value === o.value}
+          className={cn(seg(value === o.value), "hover:text-ink")}
         >
           {o.label}
-        </span>
+        </button>
       ))}
-    </button>
+    </div>
   );
 }

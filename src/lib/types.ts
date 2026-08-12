@@ -120,17 +120,33 @@ export interface Capture {
 export type SortKey = "quote_date" | "created_at";
 export type SortDir = "desc" | "asc"; // desc = newest first
 
+/**
+ * How a multi-select filter combines its selections.
+ *
+ *   or    — the quote has AT LEAST ONE of the selected values ("any of these")
+ *   and   — the quote has EVERY selected value ("all of these", others allowed)
+ *   only  — the quote has NOTHING OUTSIDE the selection ("nobody/nothing else")
+ *
+ * `only` is the exclusive one, and it is a genuinely different question from
+ * `and`: selecting just "Jake" under `and` still returns quotes where Jake
+ * talks *with* Keya, because Jake is present. Under `only` those are excluded —
+ * you get Jake's solo quotes. With several selected, `only` keeps quotes whose
+ * cast is a SUBSET of the selection (so picking Jake + Keya returns their
+ * shared quotes and each of their solo ones, but nothing involving Sam).
+ */
+export type FilterMode = "and" | "or" | "only";
+
 export interface FeedFilters {
   /** Fuzzy free-text query. */
   query: string;
   /** Selected quotees/speakers; a line match surfaces the whole block. */
   speakers: string[];
-  /** AND = every selected speaker must have a line in the quote; OR = any. */
-  speakerMode: "and" | "or";
+  /** See {@link FilterMode}. */
+  speakerMode: FilterMode;
   /** Selected tags. */
   tags: string[];
-  /** AND = quote must contain every selected tag; OR = any. */
-  tagMode: "and" | "or";
+  /** See {@link FilterMode}. */
+  tagMode: FilterMode;
   /** Inclusive ISO date bounds (YYYY-MM-DD) or null. */
   since: string | null;
   before: string | null;

@@ -88,26 +88,44 @@ export function applyFeed(
     result = getFuse(quotes).search(query).map((r) => r.item);
   }
 
-  // --- Speaker filter (configurable AND / OR, case-insensitive) ----------
-  // OR  → at least one selected speaker has a line in the quote.
-  // AND → every selected speaker has a line in the quote (they interact).
+  // --- Speaker filter (configurable AND / OR / ONLY, case-insensitive) ----
+  // OR   → at least one selected speaker has a line in the quote.
+  // AND  → every selected speaker has a line in the quote (they interact).
+  // ONLY → nobody outside the selection speaks in the quote.
   if (filters.speakers.length > 0) {
-    const wanted = filters.speakers.map((s) => s.toLowerCase());
+    const wanted = new Set(filters.speakers.map((s) => s.toLowerCase()));
     result = result.filter((q) => {
+      // Blank speakers are deliberately NOT stripped here. Under `only` an
+      // unattributed line reads as an outsider — a half-labelled quote can't
+      // honestly be certified as "just these people" — and the empty string is
+      // never in `wanted`, so it fails the subset check on its own.
       const present = new Set(q.lines.map((l) => l.speaker.trim().toLowerCase()));
-      return filters.speakerMode === "and"
-        ? wanted.every((s) => present.has(s))
-        : wanted.some((s) => present.has(s));
+      switch (filters.speakerMode) {
+        case "and":
+          return [...wanted].every((s) => present.has(s));
+        case "only":
+          // Non-empty guard: a quote with no lines has an empty cast, which is
+          // vacuously a subset of anything and would otherwise always match.
+          return present.size > 0 && [...present].every((s) => wanted.has(s));
+        default:
+          return [...wanted].some((s) => present.has(s));
+      }
     });
   }
 
-  // --- Tag filter (configurable AND / OR) --------------------------------
+  // --- Tag filter (configurable AND / OR / ONLY) -------------------------
   if (filters.tags.length > 0) {
+    const wantedTags = new Set(filters.tags);
     result = result.filter((q) => {
       const tagSet = new Set(q.tags);
-      return filters.tagMode === "and"
-        ? filters.tags.every((t) => tagSet.has(t))
-        : filters.tags.some((t) => tagSet.has(t));
+      switch (filters.tagMode) {
+        case "and":
+          return [...wantedTags].every((t) => tagSet.has(t));
+        case "only":
+          return tagSet.size > 0 && [...tagSet].every((t) => wantedTags.has(t));
+        default:
+          return [...wantedTags].some((t) => tagSet.has(t));
+      }
     });
   }
 

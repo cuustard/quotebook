@@ -16,7 +16,13 @@
  * that field, so a hand-edited or truncated URL degrades instead of breaking.
  */
 
-import { DEFAULT_FILTERS, type FeedFilters, type SortDir, type SortKey } from "@/lib/types";
+import {
+  DEFAULT_FILTERS,
+  type FeedFilters,
+  type FilterMode,
+  type SortDir,
+  type SortKey,
+} from "@/lib/types";
 
 /** Minimal read surface shared by URLSearchParams and Next's readonly variant. */
 export interface ReadableParams {
@@ -33,6 +39,11 @@ function uniqueInts(values: string[], min: number, max: number): number[] {
     if (Number.isInteger(n) && n >= min && n <= max) out.add(n);
   }
   return [...out].sort((a, b) => a - b);
+}
+
+/** Accept any known mode; anything else falls back to that field's default. */
+function mode(raw: string | null, fallback: FilterMode): FilterMode {
+  return raw === "and" || raw === "or" || raw === "only" ? raw : fallback;
 }
 
 function cleanStrings(values: string[]): string[] {
@@ -55,9 +66,9 @@ export function decodeFeedFilters(params: ReadableParams): FeedFilters {
     ...DEFAULT_FILTERS,
     query: params.get("q")?.trim() || "",
     speakers: cleanStrings(params.getAll("sp")),
-    speakerMode: params.get("spm") === "and" ? "and" : DEFAULT_FILTERS.speakerMode,
+    speakerMode: mode(params.get("spm"), DEFAULT_FILTERS.speakerMode),
     tags: cleanStrings(params.getAll("tg")),
-    tagMode: params.get("tgm") === "or" ? "or" : DEFAULT_FILTERS.tagMode,
+    tagMode: mode(params.get("tgm"), DEFAULT_FILTERS.tagMode),
     since: since && DATE_RE.test(since) ? since : null,
     before: before && DATE_RE.test(before) ? before : null,
     hours: uniqueInts(params.getAll("hr"), 0, 23),

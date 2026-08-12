@@ -188,3 +188,87 @@ describe("applyFeed", () => {
     expect(none).toEqual([]);
   });
 });
+
+/**
+ * `only` — the exclusive mode. The distinction that matters is against `and`:
+ * both require the selection to be satisfied, but `and` tolerates extra people
+ * in the quote and `only` does not.
+ *
+ * Fixture recap — q1: [Alice] · q2: [bob, alice] · q3: [Carol]
+ */
+describe("applyFeed — exclusive (only) mode", () => {
+  it("speaker ONLY excludes quotes where anyone else speaks", () => {
+    const out = applyFeed(feed, f({ speakers: ["Alice"], speakerMode: "only" }));
+    // q2 has Alice too, but bob is in it — not exclusively Alice.
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("differs from AND, which allows other speakers alongside", () => {
+    const and = applyFeed(feed, f({ speakers: ["Alice"], speakerMode: "and" }));
+    expect(and.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+
+    const only = applyFeed(feed, f({ speakers: ["Alice"], speakerMode: "only" }));
+    expect(only.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("with several selected, keeps quotes whose whole cast is inside the selection", () => {
+    const out = applyFeed(
+      feed,
+      f({ speakers: ["Alice", "bob"], speakerMode: "only" }),
+    );
+    // q1 (Alice solo) and q2 (Alice + bob) both draw only on the selected cast.
+    // q3 (Carol) does not.
+    expect(out.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+  });
+
+  it("is case-insensitive like the other speaker modes", () => {
+    const out = applyFeed(feed, f({ speakers: ["ALICE"], speakerMode: "only" }));
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("treats an unattributed line as an outsider", () => {
+    // A quote that is half Alice, half nobody-knows cannot honestly be called
+    // "only Alice", so it is excluded rather than silently certified.
+    const partial = quote("q6", {
+      lines: [line("Alice", "said something"), line("", "and then someone else did")],
+    });
+    const out = applyFeed([...feed, partial], f({ speakers: ["Alice"], speakerMode: "only" }));
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("never matches a quote with no lines at all", () => {
+    // An empty cast is vacuously a subset of any selection — guard against it.
+    const empty = quote("q7", { lines: [] });
+    const out = applyFeed([...feed, empty], f({ speakers: ["Alice"], speakerMode: "only" }));
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("tag ONLY excludes quotes carrying tags outside the selection", () => {
+    const out = applyFeed(feed, f({ tags: ["science"], tagMode: "only" }));
+    // q2 is tagged science AND banter, so it is not exclusively science.
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+
+    const both = applyFeed(feed, f({ tags: ["science", "banter"], tagMode: "only" }));
+    expect(both.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+  });
+
+  it("tag ONLY never matches an untagged quote", () => {
+    const untagged = quote("q8", { lines: [line("Alice", "no tags here")], tags: [] });
+    const out = applyFeed([...feed, untagged], f({ tags: ["science"], tagMode: "only" }));
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("composes with the other filters", () => {
+    const out = applyFeed(
+      feed,
+      f({ speakers: ["Alice"], speakerMode: "only", tags: ["science"] }),
+    );
+    expect(out.map((q) => q.id)).toEqual(["q1"]);
+
+    const none = applyFeed(
+      feed,
+      f({ speakers: ["Alice"], speakerMode: "only", tags: ["work"] }),
+    );
+    expect(none).toEqual([]);
+  });
+});

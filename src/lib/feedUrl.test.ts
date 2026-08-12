@@ -118,3 +118,29 @@ describe("monthBounds", () => {
     expect(monthBounds("2021-12")).toEqual({ since: "2021-12-01", before: "2021-12-31" });
   });
 });
+
+describe("exclusive (only) mode round-trips", () => {
+  it("survives encode → decode for both filters", () => {
+    const qs = encodeFeedFilters({
+      ...DEFAULT_FILTERS,
+      speakers: ["Jake Evans"],
+      speakerMode: "only",
+      tags: ["farm"],
+      tagMode: "only",
+    });
+    expect(qs).toContain("spm=only");
+    expect(qs).toContain("tgm=only");
+
+    const back = decodeFeedFilters(new URLSearchParams(qs));
+    expect(back.speakerMode).toBe("only");
+    expect(back.tagMode).toBe("only");
+    expect(back.speakers).toEqual(["Jake Evans"]);
+  });
+
+  it("falls back to the field default for an unknown mode", () => {
+    // A hand-edited or truncated URL must degrade, not break the feed.
+    const back = decodeFeedFilters(new URLSearchParams("spm=sideways&tgm="));
+    expect(back.speakerMode).toBe(DEFAULT_FILTERS.speakerMode);
+    expect(back.tagMode).toBe(DEFAULT_FILTERS.tagMode);
+  });
+});
