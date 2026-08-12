@@ -118,12 +118,18 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
         <span className="truncate">{label}</span>
       </button>
 
+      {/* Width is deliberately kept inside the 18rem filter column. This
+          popover lives in a narrow sticky sidebar with the quote feed
+          immediately to its right, so anything wider than the column spills
+          over the quotes — which is what a single-row header forced it to do.
+          Stacking the two nav pairs buys the width back. */}
       {open && (
-        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-80 p-3 shadow-xl">
+        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-64 p-3 shadow-xl">
           {/* Each nav pair flanks the dropdown it steps through — month
               arrows hug the month select, year arrows hug the year select —
-              so it's visually obvious what each button jumps. */}
-          <div className="mb-2 flex items-center justify-center gap-3">
+              so it's visually obvious what each button jumps. One pair per
+              row: side by side they don't fit the column. */}
+          <div className="mb-2 flex flex-col items-center gap-1.5">
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
@@ -137,7 +143,7 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
               <select
                 value={cursor.getMonth()}
                 onChange={(e) => setCursor((c) => new Date(c.getFullYear(), Number(e.target.value), 1))}
-                className="rounded-md border border-white/10 bg-paper px-2 py-1 text-sm font-medium text-ink outline-none hover:bg-white/5"
+                className="w-28 rounded-md border border-white/10 bg-paper px-2 py-1 text-center text-sm font-medium text-ink outline-none hover:bg-white/5"
                 aria-label="Month"
               >
                 {MONTH_NAMES.map((m, i) => (
@@ -170,7 +176,7 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
               <select
                 value={cursor.getFullYear()}
                 onChange={(e) => setCursor((c) => new Date(Number(e.target.value), c.getMonth(), 1))}
-                className="rounded-md border border-white/10 bg-paper px-2 py-1 text-sm font-medium text-ink outline-none hover:bg-white/5"
+                className="w-28 rounded-md border border-white/10 bg-paper px-2 py-1 text-center text-sm font-medium text-ink outline-none hover:bg-white/5"
                 aria-label="Year"
               >
                 {years.map((y) => (
