@@ -209,7 +209,7 @@ export function FeedControls({
                 options={[
                   { value: "or", label: "Any", title: "Any of them speaks in the quote" },
                   { value: "and", label: "All", title: "All of them speak in the quote — others may too" },
-                  { value: "only", label: "Only", title: "Nobody else speaks in the quote" },
+                  { value: "only", label: "Only", title: "Exactly these quotees — all of them, and nobody else" },
                 ]}
               />
             }
@@ -234,7 +234,7 @@ export function FeedControls({
                 options={[
                   { value: "or", label: "Any", title: "Has at least one of these tags" },
                   { value: "and", label: "All", title: "Has all of these tags — others allowed" },
-                  { value: "only", label: "Only", title: "Has no tags outside this selection" },
+                  { value: "only", label: "Only", title: "Has exactly these tags — all of them, and no others" },
                 ]}
               />
             }

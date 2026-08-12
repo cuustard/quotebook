@@ -91,22 +91,25 @@ export function applyFeed(
   // --- Speaker filter (configurable AND / OR / ONLY, case-insensitive) ----
   // OR   → at least one selected speaker has a line in the quote.
   // AND  → every selected speaker has a line in the quote (they interact).
-  // ONLY → nobody outside the selection speaks in the quote.
+  // ONLY → the quote's cast is EXACTLY the selection: all of them, nobody else.
   if (filters.speakers.length > 0) {
     const wanted = new Set(filters.speakers.map((s) => s.toLowerCase()));
     result = result.filter((q) => {
       // Blank speakers are deliberately NOT stripped here. Under `only` an
       // unattributed line reads as an outsider — a half-labelled quote can't
       // honestly be certified as "just these people" — and the empty string is
-      // never in `wanted`, so it fails the subset check on its own.
+      // never in `wanted`, so it inflates the cast size and fails the match.
       const present = new Set(q.lines.map((l) => l.speaker.trim().toLowerCase()));
       switch (filters.speakerMode) {
         case "and":
           return [...wanted].every((s) => present.has(s));
         case "only":
-          // Non-empty guard: a quote with no lines has an empty cast, which is
-          // vacuously a subset of anything and would otherwise always match.
-          return present.size > 0 && [...present].every((s) => wanted.has(s));
+          // Equal sizes + every selected speaker present ⇒ the two sets are
+          // identical, so this also rules out anyone extra. A quote with no
+          // lines has an empty cast and can never equal a non-empty selection.
+          return (
+            present.size === wanted.size && [...wanted].every((s) => present.has(s))
+          );
         default:
           return [...wanted].some((s) => present.has(s));
       }
@@ -122,7 +125,10 @@ export function applyFeed(
         case "and":
           return [...wantedTags].every((t) => tagSet.has(t));
         case "only":
-          return tagSet.size > 0 && [...tagSet].every((t) => wantedTags.has(t));
+          return (
+            tagSet.size === wantedTags.size &&
+            [...wantedTags].every((t) => tagSet.has(t))
+          );
         default:
           return [...wantedTags].some((t) => tagSet.has(t));
       }

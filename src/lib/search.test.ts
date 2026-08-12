@@ -211,14 +211,25 @@ describe("applyFeed — exclusive (only) mode", () => {
     expect(only.map((q) => q.id)).toEqual(["q1"]);
   });
 
-  it("with several selected, keeps quotes whose whole cast is inside the selection", () => {
+  it("with several selected, matches the cast EXACTLY — not a subset", () => {
     const out = applyFeed(
       feed,
       f({ speakers: ["Alice", "bob"], speakerMode: "only" }),
     );
-    // q1 (Alice solo) and q2 (Alice + bob) both draw only on the selected cast.
-    // q3 (Carol) does not.
-    expect(out.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+    // q2 is exactly Alice + bob. q1 is Alice ALONE — under exact match that is
+    // a different cast, so it is excluded even though it adds nobody extra.
+    // q3 (Carol) is unrelated.
+    expect(out.map((q) => q.id)).toEqual(["q2"]);
+  });
+
+  it("excludes a solo quote when two speakers are selected", () => {
+    // The distinguishing case for exact-vs-subset, stated on its own so a
+    // future change to either semantic fails loudly here.
+    const soloAlice = applyFeed(feed, f({ speakers: ["Alice"], speakerMode: "only" }));
+    expect(soloAlice.map((q) => q.id)).toEqual(["q1"]);
+
+    const pair = applyFeed(feed, f({ speakers: ["Alice", "bob"], speakerMode: "only" }));
+    expect(pair.map((q) => q.id)).not.toContain("q1");
   });
 
   it("is case-insensitive like the other speaker modes", () => {
@@ -243,13 +254,15 @@ describe("applyFeed — exclusive (only) mode", () => {
     expect(out.map((q) => q.id)).toEqual(["q1"]);
   });
 
-  it("tag ONLY excludes quotes carrying tags outside the selection", () => {
+  it("tag ONLY matches the tag set exactly", () => {
     const out = applyFeed(feed, f({ tags: ["science"], tagMode: "only" }));
     // q2 is tagged science AND banter, so it is not exclusively science.
     expect(out.map((q) => q.id)).toEqual(["q1"]);
 
+    // Selecting both tags matches q2 (exactly those two) but no longer q1,
+    // which carries only one of them.
     const both = applyFeed(feed, f({ tags: ["science", "banter"], tagMode: "only" }));
-    expect(both.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+    expect(both.map((q) => q.id)).toEqual(["q2"]);
   });
 
   it("tag ONLY never matches an untagged quote", () => {

@@ -125,14 +125,16 @@ export type SortDir = "desc" | "asc"; // desc = newest first
  *
  *   or    — the quote has AT LEAST ONE of the selected values ("any of these")
  *   and   — the quote has EVERY selected value ("all of these", others allowed)
- *   only  — the quote has NOTHING OUTSIDE the selection ("nobody/nothing else")
+ *   only  — the quote has EXACTLY the selected values ("these and nobody else")
  *
  * `only` is the exclusive one, and it is a genuinely different question from
  * `and`: selecting just "Jake" under `and` still returns quotes where Jake
  * talks *with* Keya, because Jake is present. Under `only` those are excluded —
- * you get Jake's solo quotes. With several selected, `only` keeps quotes whose
- * cast is a SUBSET of the selection (so picking Jake + Keya returns their
- * shared quotes and each of their solo ones, but nothing involving Sam).
+ * you get Jake's solo quotes.
+ *
+ * With several selected, `only` is an EXACT match on the set, not a subset:
+ * picking Jake + Keya returns the quotes those two share, and neither of their
+ * solo quotes. Read it as "a quote by exactly these people".
  */
 export type FilterMode = "and" | "or" | "only";
 
