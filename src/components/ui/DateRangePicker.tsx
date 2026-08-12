@@ -118,25 +118,22 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
         <span className="truncate">{label}</span>
       </button>
 
-      {/* Geometry, all of it forced by living in a narrow sticky sidebar with
-          the quote feed immediately to the right:
-          — `left-0` keeps the popover under the trigger that opened it. An
-            earlier pass anchored it to the filter panel's outer edge to buy
-            16px, but the panel's border is too faint to read as an alignment
-            edge, so the popover just looked like it was hanging off to the
-            left of the field.
-          — 18rem is then the ceiling: the feed starts one 24px gutter past
-            the 18rem column, leaving ~7px clear. That's a hard limit, since
-            a fixed Tailwind width never grows to fit overflowing children —
-            so the only question is whether the header row fits inside it,
-            which is what the sizes below are chosen for.
+      {/* CENTRED on the trigger (`left-1/2` + `-translate-x-1/2`), not aligned
+          to one of its edges. The popover is wider than the trigger, so it
+          overhangs by the same ~17px on each side — which is the point: an
+          edge-aligned popover reads as lopsided precisely because the overhang
+          all lands on one side.
+          Centring also happens to be the safest option here. This lives in a
+          narrow sticky sidebar with the quote feed immediately to the right,
+          and splitting the overhang leaves ~24px before the feed instead of
+          the ~7px an edge alignment left — while still clearing the app nav.
           The selects use a custom arrow (`appearance-none` + an absolutely
           positioned chevron) rather than the OS-native one: the native
           indicator's reserved width varies by browser/OS (roughly 18–25px),
-          which is a third of the small year select and would make this
-          budget a guess rather than a measurement. */}
+          which is a third of the small year select and would make the
+          one-row header budget a guess rather than a measurement. */}
       {open && (
-        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-72 p-3 shadow-xl">
+        <div className="qb-card absolute left-1/2 top-full z-20 mt-2 w-72 -translate-x-1/2 p-3 shadow-xl">
           {/* Each nav pair flanks the dropdown it steps through — month
               arrows hug the month select, year arrows hug the year select —
               so it's visually obvious what each button jumps. Centred as a
