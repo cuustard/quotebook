@@ -10,8 +10,13 @@ interface DateRangePickerProps {
   onChange: (next: { since: string | null; before: string | null }) => void;
 }
 
+// Abbreviated ("Sep", not "September"). The calendar is the same width as its
+// trigger now that the expanded unit has one continuous outline, which leaves
+// ~228px of content — and a one-row month+year header with full names needs
+// ~252px. Short names buy back ~36px, which is the difference between the
+// header fitting on one row and wrapping.
 const MONTH_NAMES = Array.from({ length: 12 }, (_, m) =>
-  new Intl.DateTimeFormat(undefined, { month: "long" }).format(new Date(2000, m, 1)),
+  new Intl.DateTimeFormat(undefined, { month: "short" }).format(new Date(2000, m, 1)),
 );
 const WEEKDAY_HEADERS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
@@ -131,7 +136,7 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 onChange={(v) => setCursor((c) => new Date(c.getFullYear(), v, 1))}
                 options={MONTH_NAMES.map((m, i) => [i, m] as const)}
                 label="Month"
-                widthClassName="w-[6.25rem]"
+                widthClassName="w-16"
               />
               <button
                 type="button"
