@@ -81,7 +81,8 @@ export function MultiSelectDropdown({
         : `${selected.length} ${noun}s selected`;
 
   return (
-    <div ref={rootRef} className="relative">
+    // No `relative`: the list is part of the flow now, not an overlay.
+    <div ref={rootRef}>
       <button
         type="button"
         onClick={() => setOpenState(!open)}
@@ -94,8 +95,14 @@ export function MultiSelectDropdown({
         <ChevronIcon className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
 
+      {/* Expands INLINE, matching the date picker: part of the filter section
+          rather than a layer over the feed, so it pushes what follows down.
+          `-mx-4` cancels the filter panel's `p-4` so the open list spans the
+          panel edge to edge and reads as a section of it. The options list
+          keeps its own max-height, so a book with many quotees grows the
+          panel by a bounded amount rather than without limit. */}
       {open && (
-        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-full min-w-[14rem] p-2 shadow-xl">
+        <div className="-mx-4 mt-2 border-y border-white/[0.06] bg-surface-sunken px-3 py-2">
           {options.length > searchThreshold && (
             <input
               ref={searchRef}

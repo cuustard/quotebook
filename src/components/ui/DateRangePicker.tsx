@@ -105,7 +105,9 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
   const isEndpoint = (day: Date) => toISODate(day) === since || toISODate(day) === before;
 
   return (
-    <div ref={rootRef} className="relative">
+    // No `relative`: nothing is positioned against this any more now that the
+    // calendar is part of the flow rather than an overlay.
+    <div ref={rootRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -118,22 +120,22 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
         <span className="truncate">{label}</span>
       </button>
 
-      {/* CENTRED on the trigger (`left-1/2` + `-translate-x-1/2`), not aligned
-          to one of its edges. The popover is wider than the trigger, so it
-          overhangs by the same ~17px on each side — which is the point: an
-          edge-aligned popover reads as lopsided precisely because the overhang
-          all lands on one side.
-          Centring also happens to be the safest option here. This lives in a
-          narrow sticky sidebar with the quote feed immediately to the right,
-          and splitting the overhang leaves ~24px before the feed instead of
-          the ~7px an edge alignment left — while still clearing the app nav.
+      {/* Expands INLINE rather than floating: it's part of the filter section,
+          so it takes up space and pushes everything below it down instead of
+          covering the feed. No absolute positioning, no z-index, no shadow —
+          all of which existed only to manage an overlay.
+          `-mx-4` cancels the filter panel's own `p-4` so the open calendar
+          spans the panel edge to edge, which both reads as a section of the
+          panel and buys back the 32px the padding would otherwise cost. That
+          matters: within the padding there is ~230px of content width, and
+          the one-row month+year header needs ~252px, so it would be squeezed.
           The selects use a custom arrow (`appearance-none` + an absolutely
           positioned chevron) rather than the OS-native one: the native
           indicator's reserved width varies by browser/OS (roughly 18–25px),
           which is a third of the small year select and would make the
           one-row header budget a guess rather than a measurement. */}
       {open && (
-        <div className="qb-card absolute left-1/2 top-full z-20 mt-2 w-72 -translate-x-1/2 p-3 shadow-xl">
+        <div className="-mx-4 mt-2 border-y border-white/[0.06] bg-surface-sunken px-3 py-3">
           {/* Each nav pair flanks the dropdown it steps through — month
               arrows hug the month select, year arrows hug the year select —
               so it's visually obvious what each button jumps. Centred as a

@@ -38,9 +38,11 @@ function setup(props: Partial<React.ComponentProps<typeof MultiSelectDropdown>> 
 // is brittle because the label IS the selection summary under test.
 const trigger = () => root.querySelector("button") as HTMLButtonElement;
 const search = () => screen.getByPlaceholderText("Search speakers…");
-/** The open popover. Scoping matters: with one thing selected the trigger's
- *  label is that same name, so an unscoped query matches two buttons. */
-const panel = () => root.querySelector(".qb-card") as HTMLElement;
+/** The expanded list — always the trigger's next sibling. Selected structurally
+ *  rather than by class so a restyle doesn't break it. Scoping matters: with
+ *  one thing selected the trigger's label is that same name, so an unscoped
+ *  query matches two buttons. */
+const panel = () => trigger().nextElementSibling as HTMLElement;
 const option = (name: string) => within(panel()).getByRole("button", { name });
 const noOption = (name: string) => within(panel()).queryByRole("button", { name });
 
