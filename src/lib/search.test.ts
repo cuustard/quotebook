@@ -285,3 +285,131 @@ describe("applyFeed — exclusive (only) mode", () => {
     expect(none).toEqual([]);
   });
 });
+
+/**
+ * Multi-select truth table.
+ *
+ * The three modes are only meaningfully different once more than one value is
+ * selected, so this fixture enumerates every shape a quote's cast can take
+ * relative to a two-name selection {Jake, Keya}: each alone, exactly both,
+ * both-plus-an-outsider, one-plus-an-outsider, an unrelated cast, no cast at
+ * all, and a half-labelled one.
+ *
+ *   cast                  | Any | All | Only
+ *   ----------------------|-----|-----|-----
+ *   Jake                  |  ✓  |     |
+ *   Keya                  |  ✓  |     |
+ *   Jake, Keya            |  ✓  |  ✓  |  ✓
+ *   Keya, Jake (reversed) |  ✓  |  ✓  |  ✓
+ *   Jake, Keya, Sam       |  ✓  |  ✓  |
+ *   Jake, Sam             |  ✓  |     |
+ *   Sam                   |     |     |
+ *   (no lines)            |     |     |
+ *   Jake, (unattributed)  |  ✓  |     |
+ */
+describe("applyFeed — multi-select across all three modes", () => {
+  const cast: QuoteWithLines[] = [
+    quote("m-jake", { lines: [line("Jake", "solo")] }),
+    quote("m-keya", { lines: [line("Keya", "solo")] }),
+    quote("m-pair", { lines: [line("Jake", "a"), line("Keya", "b")] }),
+    quote("m-pair-rev", { lines: [line("Keya", "a"), line("Jake", "b")] }),
+    quote("m-pair-plus", {
+      lines: [line("Jake", "a"), line("Keya", "b"), line("Sam", "c")],
+    }),
+    quote("m-jake-sam", { lines: [line("Jake", "a"), line("Sam", "b")] }),
+    quote("m-sam", { lines: [line("Sam", "solo")] }),
+    quote("m-empty", { lines: [] }),
+    quote("m-partial", { lines: [line("Jake", "a"), line("", "b")] }),
+  ];
+
+  const pick = (mode: FeedFilters["speakerMode"]) =>
+    applyFeed(cast, f({ speakers: ["Jake", "Keya"], speakerMode: mode }))
+      .map((q) => q.id)
+      .sort();
+
+  it("Any = at least one of the selected speaks", () => {
+    expect(pick("or")).toEqual(
+      [
+        "m-jake",
+        "m-jake-sam",
+        "m-keya",
+        "m-pair",
+        "m-pair-plus",
+        "m-pair-rev",
+        "m-partial",
+      ].sort(),
+    );
+  });
+
+  it("All = every selected speaks, outsiders permitted", () => {
+    // m-pair-plus qualifies: Sam is extra, but Jake and Keya are both there.
+    // The solos do not: each is missing the other selected name.
+    expect(pick("and")).toEqual(["m-pair", "m-pair-plus", "m-pair-rev"].sort());
+  });
+
+  it("Only = exactly the selected cast, no more and no less", () => {
+    // Drops m-pair-plus (Sam is extra) and both solos (each is short a name).
+    expect(pick("only")).toEqual(["m-pair", "m-pair-rev"].sort());
+  });
+
+  it("is insensitive to the order speakers appear in the quote", () => {
+    for (const mode of ["or", "and", "only"] as const) {
+      const ids = pick(mode);
+      expect(ids.includes("m-pair")).toBe(ids.includes("m-pair-rev"));
+    }
+  });
+
+  it("nests: Only ⊆ All ⊆ Any", () => {
+    // A structural invariant, not a coincidence of this fixture. Exact-match
+    // implies every selected value is present (satisfying All), and All on a
+    // non-empty selection implies at least one is present (satisfying Any).
+    const any = new Set(pick("or"));
+    const all = new Set(pick("and"));
+    const only = new Set(pick("only"));
+
+    for (const id of only) expect(all.has(id)).toBe(true);
+    for (const id of all) expect(any.has(id)).toBe(true);
+    // And the nesting is strict here — each mode really does narrow.
+    expect(only.size).toBeLessThan(all.size);
+    expect(all.size).toBeLessThan(any.size);
+  });
+
+  it("never matches an outsider-only or empty quote in any mode", () => {
+    for (const mode of ["or", "and", "only"] as const) {
+      expect(pick(mode)).not.toContain("m-sam");
+      expect(pick(mode)).not.toContain("m-empty");
+    }
+  });
+
+  it("collapses to Any === All when a single name is selected", () => {
+    const one = (mode: FeedFilters["speakerMode"]) =>
+      applyFeed(cast, f({ speakers: ["Jake"], speakerMode: mode }))
+        .map((q) => q.id)
+        .sort();
+    // With one selection "at least one of" and "every one of" are the same
+    // question; Only is the one that still differs.
+    expect(one("or")).toEqual(one("and"));
+    expect(one("only")).toEqual(["m-jake"]);
+  });
+
+  it("applies the same three rules to tags", () => {
+    const tagged: QuoteWithLines[] = [
+      quote("t-farm", { lines: [line("Jake", "x")], tags: ["farm"] }),
+      quote("t-banter", { lines: [line("Jake", "x")], tags: ["banter"] }),
+      quote("t-both", { lines: [line("Jake", "x")], tags: ["farm", "banter"] }),
+      quote("t-both-plus", {
+        lines: [line("Jake", "x")],
+        tags: ["farm", "banter", "work"],
+      }),
+      quote("t-none", { lines: [line("Jake", "x")], tags: [] }),
+    ];
+    const byTag = (mode: FeedFilters["tagMode"]) =>
+      applyFeed(tagged, f({ tags: ["farm", "banter"], tagMode: mode }))
+        .map((q) => q.id)
+        .sort();
+
+    expect(byTag("or")).toEqual(["t-banter", "t-both", "t-both-plus", "t-farm"].sort());
+    expect(byTag("and")).toEqual(["t-both", "t-both-plus"].sort());
+    expect(byTag("only")).toEqual(["t-both"]);
+  });
+});
