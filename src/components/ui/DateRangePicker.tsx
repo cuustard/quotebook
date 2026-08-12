@@ -118,25 +118,30 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
         <span className="truncate">{label}</span>
       </button>
 
-      {/* Width budget: this popover lives in a narrow sticky sidebar with the
-          quote feed immediately to its right — past ~295px it starts
-          overlapping the feed (18rem column + a 24px gutter before the feed
-          starts). 288px (the column's own width) keeps a hard 7px clear,
-          which holds regardless of how tightly the header row's content
-          packs, since a fixed Tailwind width never grows to fit overflowing
-          children.
-          To fit month + year on one row inside that budget, the selects use
-          a custom arrow (`appearance-none` + a small absolutely-positioned
-          chevron) instead of the OS-native one — the native indicator's
-          reserved width varies by browser/OS (roughly 18–25px) and eats
-          disproportionately into the small year select, whereas a custom one
-          is a few fixed, known pixels either way. */}
+      {/* Geometry, all of it forced by living in a narrow sticky sidebar with
+          the quote feed immediately to the right:
+          — `-left-4` pulls the popover out to the filter panel's own left
+            edge (the panel pads its contents by 1rem), so it reads as aligned
+            with the card behind it instead of indented inside it, AND buys
+            16px of width before the feed. Anchored at the trigger's edge
+            instead, 4 nav buttons + 2 selects only fit by touching each other
+            and spilling into the padding — which is what made the header look
+            shoved right rather than centred.
+          — 19rem then still stops ~7px short of the feed, which begins one
+            24px gutter past the 18rem column.
+          The selects also use a custom arrow (`appearance-none` + an
+          absolutely-positioned chevron) rather than the OS-native one: the
+          native indicator's reserved width varies by browser/OS (roughly
+          18–25px), which is a third of the small year select and would make
+          this budget a guess rather than a measurement. */}
       {open && (
-        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-72 p-3 shadow-xl">
+        <div className="qb-card absolute -left-4 top-full z-20 mt-2 w-[19rem] p-3 shadow-xl">
           {/* Each nav pair flanks the dropdown it steps through — month
               arrows hug the month select, year arrows hug the year select —
-              so it's visually obvious what each button jumps. */}
-          <div className="mb-2 flex items-center justify-between">
+              so it's visually obvious what each button jumps. Centred as a
+              unit: `justify-between` would shove each pair to an opposite
+              edge, which only looks deliberate if they fill the row. */}
+          <div className="mb-2 flex items-center justify-center gap-2">
             <div className="flex items-center">
               <button
                 type="button"
@@ -152,7 +157,7 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 onChange={(v) => setCursor((c) => new Date(c.getFullYear(), v, 1))}
                 options={MONTH_NAMES.map((m, i) => [i, m] as const)}
                 label="Month"
-                widthClassName="w-28"
+                widthClassName="w-[6.25rem]"
               />
               <button
                 type="button"
@@ -180,7 +185,7 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 onChange={(v) => setCursor((c) => new Date(v, c.getMonth(), 1))}
                 options={years.map((y) => [y, String(y)] as const)}
                 label="Year"
-                widthClassName="w-[4.25rem]"
+                widthClassName="w-16"
               />
               <button
                 type="button"
@@ -283,7 +288,9 @@ function NavSelect({
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className={cn(
-          "appearance-none rounded-md border border-white/10 bg-paper py-1 pl-2 pr-5 text-left text-sm font-medium text-ink outline-none hover:bg-white/5",
+          // pr-4 exactly clears the chevron below (right-1 + w-3 = 16px), so
+          // no more of the box is reserved for the arrow than it occupies.
+          "appearance-none rounded-md border border-white/10 bg-paper py-1 pl-2 pr-4 text-left text-sm font-medium text-ink outline-none hover:bg-white/5",
           widthClassName,
         )}
         aria-label={label}
@@ -294,7 +301,7 @@ function NavSelect({
           </option>
         ))}
       </select>
-      <ChevronIcon className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-ink-muted" />
+      <ChevronIcon className="pointer-events-none absolute right-1 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-ink-muted" />
     </div>
   );
 }
