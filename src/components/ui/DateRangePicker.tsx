@@ -118,19 +118,26 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
         <span className="truncate">{label}</span>
       </button>
 
-      {/* Width is deliberately kept inside the 18rem filter column. This
-          popover lives in a narrow sticky sidebar with the quote feed
-          immediately to its right, so anything wider than the column spills
-          over the quotes — which is what a single-row header forced it to do.
-          Stacking the two nav pairs buys the width back. */}
+      {/* Width budget: this popover lives in a narrow sticky sidebar with the
+          quote feed immediately to its right — past ~295px it starts
+          overlapping the feed (18rem column + a 24px gutter before the feed
+          starts). 288px (the column's own width) keeps a hard 7px clear,
+          which holds regardless of how tightly the header row's content
+          packs, since a fixed Tailwind width never grows to fit overflowing
+          children.
+          To fit month + year on one row inside that budget, the selects use
+          a custom arrow (`appearance-none` + a small absolutely-positioned
+          chevron) instead of the OS-native one — the native indicator's
+          reserved width varies by browser/OS (roughly 18–25px) and eats
+          disproportionately into the small year select, whereas a custom one
+          is a few fixed, known pixels either way. */}
       {open && (
-        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-64 p-3 shadow-xl">
+        <div className="qb-card absolute left-0 top-full z-20 mt-2 w-72 p-3 shadow-xl">
           {/* Each nav pair flanks the dropdown it steps through — month
               arrows hug the month select, year arrows hug the year select —
-              so it's visually obvious what each button jumps. One pair per
-              row: side by side they don't fit the column. */}
-          <div className="mb-2 flex flex-col items-center gap-1.5">
-            <div className="flex items-center gap-0.5">
+              so it's visually obvious what each button jumps. */}
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center">
               <button
                 type="button"
                 onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
@@ -138,20 +145,15 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 aria-label="Previous month"
                 title="Previous month"
               >
-                <ChevronIcon className="h-4 w-4 rotate-180" />
+                <ChevronIcon className="h-3.5 w-3.5 rotate-180" />
               </button>
-              <select
+              <NavSelect
                 value={cursor.getMonth()}
-                onChange={(e) => setCursor((c) => new Date(c.getFullYear(), Number(e.target.value), 1))}
-                className="w-28 rounded-md border border-white/10 bg-paper px-2 py-1 text-center text-sm font-medium text-ink outline-none hover:bg-white/5"
-                aria-label="Month"
-              >
-                {MONTH_NAMES.map((m, i) => (
-                  <option key={m} value={i} className="bg-paper-raised text-ink">
-                    {m}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setCursor((c) => new Date(c.getFullYear(), v, 1))}
+                options={MONTH_NAMES.map((m, i) => [i, m] as const)}
+                label="Month"
+                widthClassName="w-28"
+              />
               <button
                 type="button"
                 onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
@@ -159,11 +161,11 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 aria-label="Next month"
                 title="Next month"
               >
-                <ChevronIcon className="h-4 w-4" />
+                <ChevronIcon className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center">
               <button
                 type="button"
                 onClick={() => setCursor((c) => new Date(c.getFullYear() - 1, c.getMonth(), 1))}
@@ -171,20 +173,15 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 aria-label="Previous year"
                 title="Previous year"
               >
-                <DoubleChevronIcon className="h-4 w-4 rotate-180" />
+                <DoubleChevronIcon className="h-3.5 w-3.5 rotate-180" />
               </button>
-              <select
+              <NavSelect
                 value={cursor.getFullYear()}
-                onChange={(e) => setCursor((c) => new Date(Number(e.target.value), c.getMonth(), 1))}
-                className="w-28 rounded-md border border-white/10 bg-paper px-2 py-1 text-center text-sm font-medium text-ink outline-none hover:bg-white/5"
-                aria-label="Year"
-              >
-                {years.map((y) => (
-                  <option key={y} value={y} className="bg-paper-raised text-ink">
-                    {y}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setCursor((c) => new Date(v, c.getMonth(), 1))}
+                options={years.map((y) => [y, String(y)] as const)}
+                label="Year"
+                widthClassName="w-[4.25rem]"
+              />
               <button
                 type="button"
                 onClick={() => setCursor((c) => new Date(c.getFullYear() + 1, c.getMonth(), 1))}
@@ -192,7 +189,7 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
                 aria-label="Next year"
                 title="Next year"
               >
-                <DoubleChevronIcon className="h-4 w-4" />
+                <DoubleChevronIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -259,6 +256,49 @@ function CalendarIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+/**
+ * A compact `<select>` for the month/year nav row: `appearance-none` with a
+ * small custom chevron rather than the OS-native indicator. The native one's
+ * reserved width varies by browser/OS (roughly 18–25px) and eats
+ * disproportionately into a select this small — a custom arrow costs a known,
+ * fixed few pixels either way, which is what makes the tight width budget
+ * (see the comment above the popover) predictable rather than a guess.
+ */
+function NavSelect({
+  value,
+  onChange,
+  options,
+  label,
+  widthClassName,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  options: ReadonlyArray<readonly [number, string]>;
+  label: string;
+  widthClassName: string;
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={cn(
+          "appearance-none rounded-md border border-white/10 bg-paper py-1 pl-2 pr-5 text-left text-sm font-medium text-ink outline-none hover:bg-white/5",
+          widthClassName,
+        )}
+        aria-label={label}
+      >
+        {options.map(([v, text]) => (
+          <option key={v} value={v} className="bg-paper-raised text-ink">
+            {text}
+          </option>
+        ))}
+      </select>
+      <ChevronIcon className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-ink-muted" />
+    </div>
+  );
+}
+
 function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
