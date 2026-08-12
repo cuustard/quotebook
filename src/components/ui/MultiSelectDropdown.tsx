@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { FilterDisclosure } from "@/components/ui/FilterDisclosure";
 
 interface MultiSelectDropdownProps {
   options: string[];
@@ -30,7 +31,6 @@ export function MultiSelectDropdown({
 }: MultiSelectDropdownProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Opening is an EVENT, so the state it resets belongs in the handler, not in
@@ -43,21 +43,12 @@ export function MultiSelectDropdown({
     setOpen(next);
   };
 
+  // No document-level dismiss listeners: the list occupies layout rather than
+  // floating over it, so closing it on an outside click would collapse the
+  // panel and shift everything under the pointer. It stays open until its
+  // trigger is toggled.
   useEffect(() => {
-    if (!open) return;
-    searchRef.current?.focus();
-    const onDocClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenState(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenState(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
+    if (open) searchRef.current?.focus();
   }, [open]);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
@@ -81,28 +72,16 @@ export function MultiSelectDropdown({
         : `${selected.length} ${noun}s selected`;
 
   return (
-    // No `relative`: the list is part of the flow now, not an overlay.
-    <div ref={rootRef}>
-      <button
-        type="button"
-        onClick={() => setOpenState(!open)}
-        className={cn(
-          "qb-btn-ghost w-full justify-between border border-white/10 px-3 text-left",
-          selected.length > 0 && "border-accent/40 text-accent",
-        )}
-      >
-        <span className="truncate">{label}</span>
-        <ChevronIcon className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
-      </button>
-
-      {/* Expands INLINE, matching the date picker: part of the filter section
-          rather than a layer over the feed, so it pushes what follows down.
-          `-mx-4` cancels the filter panel's `p-4` so the open list spans the
-          panel edge to edge and reads as a section of it. The options list
-          keeps its own max-height, so a book with many quotees grows the
-          panel by a bounded amount rather than without limit. */}
-      {open && (
-        <div className="-mx-4 mt-2 border-y border-white/[0.06] bg-surface-sunken px-3 py-2">
+    <FilterDisclosure
+      open={open}
+      onToggle={() => setOpenState(!open)}
+      label={label}
+      active={selected.length > 0}
+    >
+      {/* The options list keeps its own max-height, so a book with many
+          quotees grows the panel by a bounded amount rather than without
+          limit. */}
+      <>
           {options.length > searchThreshold && (
             <input
               ref={searchRef}
@@ -159,19 +138,11 @@ export function MultiSelectDropdown({
               </button>
             </div>
           )}
-        </div>
-      )}
-    </div>
+      </>
+    </FilterDisclosure>
   );
 }
 
-function ChevronIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 function CheckIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">

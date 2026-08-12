@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { FilterDisclosure } from "@/components/ui/FilterDisclosure";
 
 interface DateRangePickerProps {
   since: string | null;
@@ -36,23 +37,11 @@ export function formatShortDate(s: string): string {
 export function DateRangePicker({ since, before, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(() => fromISODate(since ?? before ?? toISODate(new Date())));
-  const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // No document-level dismiss listeners: the calendar occupies layout rather
+  // than floating over it, so closing it on an outside click would collapse
+  // the panel and shift everything under the pointer. It stays open until its
+  // trigger is toggled, Done is pressed, or a complete range is picked.
 
   // A generous, static span — cheap to compute and wide enough to cover any
   // realistic quote history without needing the book's actual date range
@@ -105,37 +94,22 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
   const isEndpoint = (day: Date) => toISODate(day) === since || toISODate(day) === before;
 
   return (
-    // No `relative`: nothing is positioned against this any more now that the
-    // calendar is part of the flow rather than an overlay.
-    <div ref={rootRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "qb-btn-ghost w-full justify-start border border-white/10 px-3 text-left",
-          (since || before) && "border-accent/40 text-accent",
-        )}
-      >
-        <CalendarIcon className="h-4 w-4 shrink-0" />
-        <span className="truncate">{label}</span>
-      </button>
-
-      {/* Expands INLINE rather than floating: it's part of the filter section,
-          so it takes up space and pushes everything below it down instead of
-          covering the feed. No absolute positioning, no z-index, no shadow —
-          all of which existed only to manage an overlay.
-          `-mx-4` cancels the filter panel's own `p-4` so the open calendar
-          spans the panel edge to edge, which both reads as a section of the
-          panel and buys back the 32px the padding would otherwise cost. That
-          matters: within the padding there is ~230px of content width, and
-          the one-row month+year header needs ~252px, so it would be squeezed.
-          The selects use a custom arrow (`appearance-none` + an absolutely
-          positioned chevron) rather than the OS-native one: the native
-          indicator's reserved width varies by browser/OS (roughly 18–25px),
-          which is a third of the small year select and would make the
-          one-row header budget a guess rather than a measurement. */}
-      {open && (
-        <div className="-mx-4 mt-2 border-y border-white/[0.06] bg-surface-sunken px-3 py-3">
+    // Shares FilterDisclosure with the quotee/tag filters, so all three
+    // triggers and sections are styled and behave identically.
+    //
+    // The selects inside use a custom arrow (`appearance-none` + an absolutely
+    // positioned chevron) rather than the OS-native one: the native indicator's
+    // reserved width varies by browser/OS (roughly 18–25px), which is a third
+    // of the small year select and would make the one-row month/year header
+    // budget a guess rather than a measurement.
+    <FilterDisclosure
+      open={open}
+      onToggle={() => setOpen((v) => !v)}
+      label={label}
+      icon={<CalendarIcon className="h-4 w-4 shrink-0" />}
+      active={Boolean(since || before)}
+    >
+      <>
           {/* Each nav pair flanks the dropdown it steps through — month
               arrows hug the month select, year arrows hug the year select —
               so it's visually obvious what each button jumps. Centred as a
@@ -247,9 +221,8 @@ export function DateRangePicker({ since, before, onChange }: DateRangePickerProp
               Done
             </button>
           </div>
-        </div>
-      )}
-    </div>
+      </>
+    </FilterDisclosure>
   );
 }
 

@@ -105,14 +105,26 @@ describe("MultiSelectDropdown", () => {
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
-  it("closes on Escape and on an outside click", () => {
+  it("stays open until the trigger is toggled", () => {
+    // The list occupies layout rather than floating over it, so dismissing it
+    // on an outside click or Escape would collapse the panel and shift
+    // everything under the pointer. Only the trigger closes it.
     setup();
     fireEvent.click(trigger());
+    expect(search()).toBeTruthy();
+
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByPlaceholderText("Search speakers…")).toBeNull();
+    expect(search()).toBeTruthy();
+
+    fireEvent.mouseDown(document.body);
+    fireEvent.click(document.body);
+    expect(search()).toBeTruthy();
+
+    // Selecting an option also leaves it open, so several can be picked.
+    fireEvent.click(option("Ben"));
+    expect(search()).toBeTruthy();
 
     fireEvent.click(trigger());
-    fireEvent.mouseDown(document.body);
     expect(screen.queryByPlaceholderText("Search speakers…")).toBeNull();
   });
 
