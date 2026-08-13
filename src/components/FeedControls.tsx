@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
+import { useIsCompact } from "@/lib/useMediaQuery";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import { WEEKDAY_LABELS } from "@/lib/stats";
 import { DEFAULT_FILTERS, type FeedFilters } from "@/lib/types";
 import { DateRangePicker, formatShortDate } from "@/components/ui/DateRangePicker";
@@ -31,6 +33,10 @@ export function FeedControls({
 }: FeedControlsProps) {
   const [showFilters, setShowFilters] = useState(false);
   const patch = (p: Partial<FeedFilters>) => setFilters({ ...filters, ...p });
+  // Presentation only — the same filter state drives both forms. Below `lg`
+  // the panel becomes a bottom sheet; at and above it, the established
+  // inline panel under the Filters button is untouched.
+  const isCompact = useIsCompact();
 
   const activeCount =
     filters.speakers.length +
@@ -90,6 +96,85 @@ export function FeedControls({
       clear: () => patch({ onlyIncomplete: false }),
     });
   }
+
+  const clearAllFilters = () =>
+    setFilters({
+      ...DEFAULT_FILTERS,
+      query: filters.query,
+      sortKey: filters.sortKey,
+      sortDir: filters.sortDir,
+    });
+
+  /**
+   * The controls themselves, held in one place so the desktop panel and the
+   * mobile sheet are guaranteed to render the SAME thing. Two copies of this
+   * JSX would be two things to keep in step, and the first divergence would
+   * be a filter that exists on one form factor and not the other.
+   */
+  const filterGroups = (
+    <>
+      {/* Quotees + AND/OR */}
+      <FilterGroup
+        label="Quotees"
+        empty={speakers.length === 0}
+        aside={
+          <Segmented
+            label="How to combine selected quotees"
+            value={filters.speakerMode}
+            onChange={(v) => patch({ speakerMode: v as FeedFilters["speakerMode"] })}
+            options={[
+              { value: "or", label: "Any", title: "Any of them speaks in the quote" },
+              { value: "and", label: "All", title: "All of them speak in the quote — others may too" },
+              { value: "only", label: "Only", title: "Exactly these quotees — all of them, and nobody else" },
+            ]}
+          />
+        }
+      >
+        <MultiSelectDropdown
+          options={speakers}
+          selected={filters.speakers}
+          onChange={(next) => patch({ speakers: next })}
+          noun="quotee"
+        />
+      </FilterGroup>
+
+      {/* Tags + AND/OR */}
+      <FilterGroup
+        label="Tags"
+        empty={tags.length === 0}
+        aside={
+          <Segmented
+            label="How to combine selected tags"
+            value={filters.tagMode}
+            onChange={(v) => patch({ tagMode: v as FeedFilters["tagMode"] })}
+            options={[
+              { value: "or", label: "Any", title: "Has at least one of these tags" },
+              { value: "and", label: "All", title: "Has all of these tags — others allowed" },
+              { value: "only", label: "Only", title: "Has exactly these tags — all of them, and no others" },
+            ]}
+          />
+        }
+      >
+        <MultiSelectDropdown
+          options={tags}
+          selected={filters.tags}
+          onChange={(next) => patch({ tags: next })}
+          prefix="#"
+          noun="tag"
+        />
+      </FilterGroup>
+
+      {/* Timeline window */}
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">Timeline</span>
+        <DateRangePicker
+          since={filters.since}
+          before={filters.before}
+          onChange={({ since, before }) => patch({ since, before })}
+        />
+      </div>
+    </>
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -177,88 +262,48 @@ export function FeedControls({
           open panel around while the user's still looking at it. Zero gap
           and a squared-off top-right corner (-mt-3 cancels the parent's
           gap-3) so it reads as attached to the Filters button above it. */}
-      {showFilters && (
-        <div className="qb-card -mt-3 flex flex-col gap-4 rounded-tr-none p-4">
-          {/* Panel header — Clear all lives here so the panel height never
-              shifts as filters become active/inactive. */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-              Filters
-            </span>
-            <button
-              onClick={() => setFilters({ ...DEFAULT_FILTERS, query: filters.query, sortKey: filters.sortKey, sortDir: filters.sortDir })}
-              title="Clear quotees, tags, timeline and the needs-fixing filter"
-              className={cn(
-                "text-xs font-medium text-accent transition hover:underline",
-                activeCount === 0 && "invisible",
-              )}
-            >
-              Clear all filters
-            </button>
+      {showFilters &&
+        (isCompact ? (
+          /* On a phone an inline panel pushes the feed off-screen and puts the
+             controls at the top of the display, furthest from the thumb. Same
+             controls, raised as a sheet instead. */
+          <BottomSheet open onClose={() => setShowFilters(false)} title="Filters">
+            <div className="flex flex-col gap-4 pb-2">
+              {filterGroups}
+              <button
+                onClick={clearAllFilters}
+                className={cn(
+                  "qb-btn-ghost w-full border border-white/10 text-accent",
+                  activeCount === 0 && "invisible",
+                )}
+              >
+                Clear all filters
+              </button>
+            </div>
+          </BottomSheet>
+        ) : (
+          <div className="qb-card -mt-3 flex flex-col gap-4 rounded-tr-none p-4">
+            {/* Panel header — Clear all lives here so the panel height never
+                shifts as filters become active/inactive. */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                Filters
+              </span>
+              <button
+                onClick={clearAllFilters}
+                title="Clear quotees, tags, timeline and the needs-fixing filter"
+                className={cn(
+                  "text-xs font-medium text-accent transition hover:underline",
+                  activeCount === 0 && "invisible",
+                )}
+              >
+                Clear all filters
+              </button>
+            </div>
+            {filterGroups}
           </div>
+        ))}
 
-          {/* Quotees + AND/OR */}
-          <FilterGroup
-            label="Quotees"
-            empty={speakers.length === 0}
-            aside={
-              <Segmented
-                label="How to combine selected quotees"
-                value={filters.speakerMode}
-                onChange={(v) => patch({ speakerMode: v as FeedFilters["speakerMode"] })}
-                options={[
-                  { value: "or", label: "Any", title: "Any of them speaks in the quote" },
-                  { value: "and", label: "All", title: "All of them speak in the quote — others may too" },
-                  { value: "only", label: "Only", title: "Exactly these quotees — all of them, and nobody else" },
-                ]}
-              />
-            }
-          >
-            <MultiSelectDropdown
-              options={speakers}
-              selected={filters.speakers}
-              onChange={(next) => patch({ speakers: next })}
-              noun="quotee"
-            />
-          </FilterGroup>
-
-          {/* Tags + AND/OR */}
-          <FilterGroup
-            label="Tags"
-            empty={tags.length === 0}
-            aside={
-              <Segmented
-                label="How to combine selected tags"
-                value={filters.tagMode}
-                onChange={(v) => patch({ tagMode: v as FeedFilters["tagMode"] })}
-                options={[
-                  { value: "or", label: "Any", title: "Has at least one of these tags" },
-                  { value: "and", label: "All", title: "Has all of these tags — others allowed" },
-                  { value: "only", label: "Only", title: "Has exactly these tags — all of them, and no others" },
-                ]}
-              />
-            }
-          >
-            <MultiSelectDropdown
-              options={tags}
-              selected={filters.tags}
-              onChange={(next) => patch({ tags: next })}
-              prefix="#"
-              noun="tag"
-            />
-          </FilterGroup>
-
-          {/* Timeline window */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">Timeline</span>
-            <DateRangePicker
-              since={filters.since}
-              before={filters.before}
-              onChange={({ since, before }) => patch({ since, before })}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Result count — only worth stating once something's actually being
           filtered out; otherwise it's just noise restating the book size. */}

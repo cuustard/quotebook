@@ -22,6 +22,7 @@ import {
 } from "@/lib/captures";
 import { pickPrivateBook } from "@/lib/repo";
 import { CaptureStatusChip } from "@/components/CaptureStatusChip";
+import { SwipeableRow } from "@/components/SwipeableRow";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useUIStore } from "@/store/useUIStore";
 import type { Capture } from "@/lib/types";
@@ -97,7 +98,23 @@ export default function InboxPage() {
       ) : (
         <div className="mt-6 flex flex-col gap-3">
           {captures.map((c) => (
-            <article key={c.id} className="qb-card p-4">
+            /* Swipe is additive triage for touch: right commits the card's own
+               affirmative action (confirm a parsed capture, otherwise open the
+               converter), left deletes — the same two things the buttons below
+               already do. On desktop the gesture cannot fire at all, so the
+               buttons remain the only route. */
+            <SwipeableRow
+              key={c.id}
+              rightLabel={c.status === "parsed" && c.quote_id ? "Confirm" : "Convert"}
+              leftLabel="Delete"
+              onSwipeRight={() =>
+                c.status === "parsed" && c.quote_id
+                  ? void completeCapture(c.id)
+                  : handleConvert(c)
+              }
+              onSwipeLeft={() => void deleteCapture(c.id)}
+            >
+            <article className="qb-card p-4">
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 whitespace-pre-wrap text-sm leading-snug text-ink">
                   {c.text}
@@ -167,6 +184,7 @@ export default function InboxPage() {
                 </div>
               </div>
             </article>
+            </SwipeableRow>
           ))}
         </div>
       )}

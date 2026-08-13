@@ -17,7 +17,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getMeta, setMeta } from "@/db/dexie";
 import { createCapture, MAX_CAPTURE_TEXT } from "@/lib/captures";
+import { cn } from "@/lib/cn";
 import { pickPrivateBook } from "@/lib/repo";
+import { useSpeechDictation } from "@/lib/useSpeechDictation";
 import { CaptureStatusChip } from "@/components/CaptureStatusChip";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -28,6 +30,15 @@ export default function QuickAddPage() {
   const [text, setText] = useState("");
   const [bookId, setBookId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Dictation appends rather than replaces, so speaking can extend something
+  // already typed (and several phrases in a row accumulate).
+  const dictation = useSpeechDictation((phrase) => {
+    setText((prev) => {
+      const joined = prev.trim() ? `${prev.trim()} ${phrase}` : phrase;
+      return joined.slice(0, MAX_CAPTURE_TEXT);
+    });
+  });
 
   const booksRaw = useLiveQuery(
     async () => (await db.quotebooks.toArray()).filter((b) => !b.deleted),
@@ -134,6 +145,15 @@ export default function QuickAddPage() {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
         />
+
+        {/* Live partial phrase. Shown outside the field so a half-heard
+            sentence never lands in the text the user is about to save. */}
+        {dictation.interim && (
+          <p className="-mt-1 truncate text-sm italic text-ink-muted/70" aria-live="polite">
+            {dictation.interim}…
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="flex items-center gap-2 text-sm text-ink-muted">
             <span>Into</span>
@@ -149,14 +169,39 @@ export default function QuickAddPage() {
               ))}
             </select>
           </label>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-ink-muted/70">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Keyboard hint is desktop guidance; on a phone there is no
+                Shift+Enter and the row needs the width for the controls. */}
+            <span className="hidden text-xs text-ink-muted/70 sm:inline">
               Enter to save · Shift+Enter for a new line
             </span>
+
+            {/* Hidden entirely where the browser has no speech API, rather
+                than shown as a button that cannot work. */}
+            {dictation.supported && (
+              <button
+                type="button"
+                onClick={() => (dictation.listening ? dictation.stop() : dictation.start())}
+                aria-pressed={dictation.listening}
+                aria-label={dictation.listening ? "Stop dictation" : "Dictate a capture"}
+                title={dictation.listening ? "Stop dictation" : "Dictate a capture"}
+                className={cn(
+                  // max-sm sizing only: desktop keeps the compact control it
+                  // had, phones get a target past the ~44px guideline.
+                  "qb-btn-ghost shrink-0 border px-3 max-sm:min-h-11 max-sm:min-w-11",
+                  dictation.listening
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-white/10 text-ink-muted hover:text-ink",
+                )}
+              >
+                <MicIcon className={cn("h-4 w-4", dictation.listening && "animate-pulse")} />
+              </button>
+            )}
+
             <button
               onClick={() => void handleSave()}
               disabled={!text.trim() || !effectiveBookId}
-              className="qb-btn-primary"
+              className="qb-btn-primary max-sm:min-h-11 max-sm:flex-1"
             >
               Capture
             </button>
@@ -183,5 +228,14 @@ export default function QuickAddPage() {
         </section>
       )}
     </div>
+  );
+}
+
+function MicIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="9" y="2" width="6" height="11" rx="3" />
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4M8 22h8" strokeLinecap="round" />
+    </svg>
   );
 }

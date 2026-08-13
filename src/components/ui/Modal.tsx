@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
+import { useSheetDrag } from "@/components/ui/useSheetDrag";
 
 interface ModalProps {
   open: boolean;
@@ -21,6 +22,9 @@ const FOCUSABLE =
  */
 export function Modal({ open, onClose, title, children, size = "md" }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Touch-only, so on desktop these handlers are attached but can never fire —
+  // the centred modal behaves exactly as it did before.
+  const { offset, handleProps } = useSheetDrag(onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -82,9 +86,24 @@ export function Modal({ open, onClose, title, children, size = "md" }: ModalProp
         className={cn(
           "qb-card flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none sm:rounded-2xl",
           size === "lg" ? "sm:max-w-2xl" : "sm:max-w-md",
+          // `qb-sheet` only animates below `sm` (see globals.css); above that
+          // this is a centred modal and the class is inert.
+          "qb-sheet",
+          offset === 0 && "transition-transform duration-200",
         )}
+        style={offset ? { transform: `translateY(${offset}px)` } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Grab handle for drag-to-dismiss. Mobile only: on desktop the modal
+            is centred, so there is no edge to drag it toward. */}
+        <div
+          {...handleProps}
+          aria-hidden
+          className="flex shrink-0 touch-none justify-center pb-1 pt-3 sm:hidden"
+        >
+          <span className="h-1 w-10 rounded-full bg-white/20" />
+        </div>
+
         {title && (
           <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
             <h2 className="font-heading text-lg font-semibold text-ink">{title}</h2>

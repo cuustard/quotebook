@@ -69,3 +69,34 @@ body {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
   }
 }
+
+/* ── Bottom-sheet entrance ────────────────────────────────────────────────
+   Sheets rise from the edge they are anchored to, so the motion explains
+   where the thing came from and where dismissing it will send it back.
+
+   Scoped to below Tailwind's `sm`. Above that the same markup is a centred
+   modal, and sliding a centred dialog up from off-screen would be motion that
+   describes a position it never occupies — as well as a change to desktop
+   behaviour, which is out of bounds here. */
+@keyframes qb-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 639.98px) {
+  .qb-sheet {
+    animation: qb-sheet-up 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+/* Respect a stated preference for less motion: the sheet still appears, it
+   just does not travel. */
+@media (prefers-reduced-motion: reduce) {
+  .qb-sheet {
+    animation: none;
+  }
+}

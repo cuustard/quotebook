@@ -1,5 +1,6 @@
 "use client";
 
+import { BottomNav } from "@/components/BottomNav";
 import { Sidebar } from "@/components/Sidebar";
 import { QuoteModal } from "@/components/QuoteModal";
 import { useUIStore } from "@/store/useUIStore";
@@ -30,11 +31,20 @@ export default function DashboardLayout({
           <span className="font-heading text-lg font-semibold">Quotebook</span>
         </header>
 
-        <main className="min-w-0 flex-1">{children}</main>
+        {/* The bottom bar is fixed, so it sits outside the flow and would
+            otherwise cover the end of every page. Reserve its height (plus the
+            iOS home indicator) below `lg`, and nothing at all above it — the
+            bar does not exist there. */}
+        <main className="min-w-0 flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0">
+          {children}
+        </main>
       </div>
 
       {/* Globally-mounted creation/edit modal */}
       <QuoteModal />
+
+      {/* Mobile/tablet primary navigation; `lg:hidden` inside the component. */}
+      <BottomNav />
     </div>
   );
 }
