@@ -148,6 +148,38 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+/**
+ * Background Sync — drain the capture parse queue when connectivity returns.
+ *
+ * The worker cannot do the parse itself: it needs the user's Supabase session
+ * to call the Edge Function, and that lives in the page. So the worker's job is
+ * to WAKE a client and let it do the work. `sync` fires when the platform
+ * decides the network is genuinely back, which is the part a page cannot do for
+ * itself once it has been closed.
+ *
+ * If no client is open the queue is left alone rather than dropped — captures
+ * are already durable in IndexedDB, and the next boot sweep will pick them up.
+ * That is why this is an optimisation and never the only path: Background Sync
+ * is Chromium-only, so Safari and Firefox rely entirely on the boot/interval
+ * sweeps in src/lib/captures.ts.
+ */
+const PARSE_QUEUE_TAG = "quotebook-parse-queue";
+
+self.addEventListener("sync", (event) => {
+  if (event.tag !== PARSE_QUEUE_TAG) return;
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      for (const client of clients) {
+        client.postMessage({ type: "quotebook:drain-parse-queue" });
+      }
+    })(),
+  );
+});
+
 /** Cache-first — for content-hashed output, where a hit is never stale. */
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);

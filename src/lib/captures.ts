@@ -25,7 +25,8 @@
 
 import { db } from "@/db/dexie";
 import { errorMessage } from "@/lib/errors";
-import { nowIso, uuid } from "@/lib/id";
+import { recordEvent } from "@/lib/events";
+import { nowIso, tick, uuid } from "@/lib/id";
 import { validateParsedQuote } from "@/lib/parse";
 import { createQuote, getQuotesWithLines, type QuoteInput } from "@/lib/repo";
 import { collectSpeakers, collectTags } from "@/lib/search";
@@ -106,6 +107,25 @@ export const INBOX_STATUSES: readonly CaptureStatus[] = [
   "failed",
 ];
 
+// ───────────────────────── Audit trail ─────────────────────────
+
+/**
+ * Build a log entry for a capture.
+ *
+ * Captures carry no LWW clock — they never sync, so there is nothing to
+ * reconcile — but the log's `tick` field still wants a monotonic ordinal, and
+ * `tick()` is the same source the record tables use. That keeps capture events
+ * orderable against the quote events they lead to, which is the whole point:
+ * the trail has to run from "raw text arrived" through to "this quote exists".
+ */
+function captureEvent(
+  id: string,
+  action: "create" | "update" | "delete",
+  fields?: string[],
+) {
+  return { entity: "capture" as const, entity_id: id, action, fields, tick: tick() };
+}
+
 // ───────────────────────────── CRUD ─────────────────────────────
 
 /**
@@ -131,7 +151,14 @@ export async function createCapture(
     attempts: 0,
     attempted_at: null,
   };
-  await db.captures.put(capture);
+  await db.transaction("rw", db.captures, db.events, async () => {
+    await db.captures.put(capture);
+    await recordEvent(captureEvent(capture.id, "create"));
+  });
+  // Ask the platform to drain the queue even if the tab is closed before the
+  // network returns. No-ops where Background Sync is unsupported; the boot and
+  // interval sweeps below still cover that case.
+  void requestBackgroundParse();
   requestResolve(); // background; no-ops while the parser isn't deployed
   return capture.id;
 }
@@ -141,25 +168,37 @@ export async function completeCapture(
   id: string,
   quoteId?: string,
 ): Promise<void> {
-  await db.captures.update(id, {
-    status: "done" as CaptureStatus,
-    ...(quoteId ? { quote_id: quoteId } : {}),
+  await db.transaction("rw", db.captures, db.events, async () => {
+    await db.captures.update(id, {
+      status: "done" as CaptureStatus,
+      ...(quoteId ? { quote_id: quoteId } : {}),
+    });
+    await recordEvent(
+      captureEvent(id, "update", quoteId ? ["status", "quote_id"] : ["status"]),
+    );
   });
 }
 
 /** Hard delete — captures are local scratch, no tombstone needed. */
 export async function deleteCapture(id: string): Promise<void> {
-  await db.captures.delete(id);
+  await db.transaction("rw", db.captures, db.events, async () => {
+    await db.captures.delete(id);
+    await recordEvent(captureEvent(id, "delete"));
+  });
 }
 
 /** Put a failed capture back in the queue with a fresh retry ladder. */
 export async function retryCapture(id: string): Promise<void> {
-  await db.captures.update(id, {
-    status: "pending" as CaptureStatus,
-    attempts: 0,
-    attempted_at: null,
-    error: null,
+  await db.transaction("rw", db.captures, db.events, async () => {
+    await db.captures.update(id, {
+      status: "pending" as CaptureStatus,
+      attempts: 0,
+      attempted_at: null,
+      error: null,
+    });
+    await recordEvent(captureEvent(id, "update", ["status", "attempts", "error"]));
   });
+  void requestBackgroundParse();
   requestResolve();
 }
 
@@ -241,38 +280,58 @@ async function resolveCapture(capture: Capture): Promise<void> {
   if (!canTransition(capture.status, "parsing")) return;
 
   const attempts = capture.attempts + 1;
-  await db.captures.update(capture.id, {
-    status: "parsing" as CaptureStatus,
-    attempts,
-    attempted_at: nowIso(),
+  // Every transition is logged. A parse is the one point where the app rewrites
+  // a user's words on their behalf, so "the machine touched this, here is what
+  // it did and whether it worked" is exactly what an audit trail is for.
+  await db.transaction("rw", db.captures, db.events, async () => {
+    await db.captures.update(capture.id, {
+      status: "parsing" as CaptureStatus,
+      attempts,
+      attempted_at: nowIso(),
+    });
+    await recordEvent(captureEvent(capture.id, "update", ["status", "attempts"]));
   });
 
   try {
     const { input, confidence } = await requestParse(capture);
     const quoteId = await createQuote(capture.quotebook_id, input);
-    await db.captures.update(capture.id, {
-      status: "parsed" as CaptureStatus,
-      quote_id: quoteId,
-      confidence,
-      error: null,
+    await db.transaction("rw", db.captures, db.events, async () => {
+      await db.captures.update(capture.id, {
+        status: "parsed" as CaptureStatus,
+        quote_id: quoteId,
+        confidence,
+        error: null,
+      });
+      await recordEvent(
+        captureEvent(capture.id, "update", ["status", "quote_id", "confidence"]),
+      );
     });
   } catch (err) {
     const message = errorMessage(err, "Parsing failed.");
     // A permanent rejection skips the retry ladder entirely.
     const permanent = err instanceof PermanentParseError;
+    // DEFENSIVE CAPTURE: both branches only ever touch status/attempts/error.
+    // `text` is never written here, so a failed parse cannot cost the user the
+    // words they captured — the row stays in the Inbox, raw and convertible.
     if (permanent || attempts >= MAX_ATTEMPTS) {
       // Out of road — surface it in the Inbox for manual conversion.
-      await db.captures.update(capture.id, {
-        status: "failed" as CaptureStatus,
-        error: message,
+      await db.transaction("rw", db.captures, db.events, async () => {
+        await db.captures.update(capture.id, {
+          status: "failed" as CaptureStatus,
+          error: message,
+        });
+        await recordEvent(captureEvent(capture.id, "update", ["status", "error"]));
       });
     } else {
       // Back to the queue; isRetryDue() enforces the backoff window. A
       // quota rejection didn't really spend an attempt, so give it back.
-      await db.captures.update(capture.id, {
-        status: "pending" as CaptureStatus,
-        attempts: cappedUntilMs > Date.now() ? capture.attempts : attempts,
-        error: message,
+      await db.transaction("rw", db.captures, db.events, async () => {
+        await db.captures.update(capture.id, {
+          status: "pending" as CaptureStatus,
+          attempts: cappedUntilMs > Date.now() ? capture.attempts : attempts,
+          error: message,
+        });
+        await recordEvent(captureEvent(capture.id, "update", ["status", "error"]));
       });
     }
   }
@@ -314,6 +373,42 @@ function requestResolve(): void {
   void resolvePendingCaptures();
 }
 
+// ─────────────────────── Background Sync ───────────────────────
+
+/** Must match the tag the service worker listens for (public/sw.js). */
+const PARSE_QUEUE_TAG = "quotebook-parse-queue";
+
+interface SyncCapableRegistration extends ServiceWorkerRegistration {
+  sync?: { register: (tag: string) => Promise<void> };
+}
+
+/**
+ * Ask the platform to drain the queue once the network is genuinely back —
+ * even if this tab is closed by then.
+ *
+ * Strictly an optimisation. Background Sync is Chromium-only, so every failure
+ * mode here (unsupported, permission denied, no worker yet) is swallowed: the
+ * capture is already durable in IndexedDB and the boot/interval/online sweeps
+ * remain the guaranteed path. Nothing in the pipeline may depend on this
+ * having worked.
+ */
+export async function requestBackgroundParse(): Promise<void> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  try {
+    const registration = (await navigator.serviceWorker.ready) as SyncCapableRegistration;
+    await registration.sync?.register(PARSE_QUEUE_TAG);
+  } catch {
+    // Unsupported or refused — the sweeps below still cover it.
+  }
+}
+
+/** The worker asking a client to do the parsing it cannot do itself. */
+const handleServiceWorkerMessage = (event: MessageEvent): void => {
+  if (event.data?.type === "quotebook:drain-parse-queue") {
+    void resolvePendingCaptures();
+  }
+};
+
 // ───────────────────────────── Engine ─────────────────────────────
 
 let started = false;
@@ -337,13 +432,20 @@ export function startCaptureEngine(): void {
   started = true;
 
   window.addEventListener("online", handleCaptureOnline);
+  navigator.serviceWorker?.addEventListener("message", handleServiceWorkerMessage);
   sweepId = setInterval(() => void resolvePendingCaptures(), SWEEP_INTERVAL_MS);
+  // Check-on-boot: anything queued while the app was closed drains now. This
+  // is the guaranteed path — Background Sync merely gets there sooner.
   void resolvePendingCaptures();
+  // Re-arm the sync in case a queue survived a close without one registered
+  // (or the registration was dropped with the previous worker).
+  void requestBackgroundParse();
 }
 
 export function stopCaptureEngine(): void {
   if (typeof window !== "undefined") {
     window.removeEventListener("online", handleCaptureOnline);
+    navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
   }
   if (sweepId) clearInterval(sweepId);
   if (graceId) clearTimeout(graceId);

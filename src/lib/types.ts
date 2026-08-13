@@ -117,8 +117,15 @@ export interface Capture {
 
 // --- Local event log -------------------------------------------------------
 
-/** Tables the event log can describe. */
-export type EventEntity = "quotebook" | "quote" | "quote_line";
+/**
+ * Tables the event log can describe.
+ *
+ * `capture` is local-only — captures never sync — but it belongs here anyway:
+ * the audit question "where did this quote come from, and what did the parser
+ * do to it" spans the capture and the quote it became, and a trail that starts
+ * at the quote cannot answer it.
+ */
+export type EventEntity = "quotebook" | "quote" | "quote_line" | "capture";
 
 export type EventAction = "create" | "update" | "delete";
 

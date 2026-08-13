@@ -19,6 +19,7 @@ import { db, getMeta, setMeta } from "@/db/dexie";
 import { createCapture, MAX_CAPTURE_TEXT } from "@/lib/captures";
 import { cn } from "@/lib/cn";
 import { pickPrivateBook } from "@/lib/repo";
+import { appendTranscript } from "@/lib/transcript";
 import { useSpeechDictation } from "@/lib/useSpeechDictation";
 import { CaptureStatusChip } from "@/components/CaptureStatusChip";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -32,12 +33,19 @@ export default function QuickAddPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Dictation appends rather than replaces, so speaking can extend something
-  // already typed (and several phrases in a row accumulate).
+  // already typed (and several phrases in a row accumulate). `appendTranscript`
+  // cleans the recogniser's artefacts and drops unusable phrases — a cough must
+  // not append a stray space — while leaving the words themselves alone.
   const dictation = useSpeechDictation((phrase) => {
-    setText((prev) => {
-      const joined = prev.trim() ? `${prev.trim()} ${phrase}` : phrase;
-      return joined.slice(0, MAX_CAPTURE_TEXT);
-    });
+    setText((prev) => appendTranscript(prev, phrase, MAX_CAPTURE_TEXT));
+  });
+
+  // The launch effect below runs once on mount and must not re-run when
+  // dictation's identity changes, so it reaches `start` through a ref rather
+  // than listing it as a dependency.
+  const startDictationRef = useRef(dictation.start);
+  useEffect(() => {
+    startDictationRef.current = dictation.start;
   });
 
   const booksRaw = useLiveQuery(
@@ -90,16 +98,31 @@ export default function QuickAddPage() {
     const params = new URLSearchParams(window.location.search);
     const shared =
       params.get("text") || params.get("title") || params.get("url") || "";
-    if (!shared) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- see above: prerender + hydration safety
-    setText(shared.slice(0, MAX_CAPTURE_TEXT));
+    // `?dictate=1` is the manifest's "Dictate a quote" shortcut: the app opens
+    // already listening, so launching from the home screen and speaking is one
+    // action rather than three.
+    const wantsDictation = params.get("dictate") === "1";
+    if (!shared && !wantsDictation) return;
+
+    if (shared) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see above: prerender + hydration safety
+      setText(shared.slice(0, MAX_CAPTURE_TEXT));
+    }
+    // Strip either param so a refresh or back-navigation doesn't resurrect an
+    // already-saved share, or restart the microphone unbidden.
     window.history.replaceState(null, "", window.location.pathname);
-    // Land the caret at the end so the user can keep typing.
+
     requestAnimationFrame(() => {
       const el = inputRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
+      if (el) {
+        // Land the caret at the end so the user can keep typing.
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+      // Started here rather than on mount so it runs after the strip above:
+      // if the browser refuses without a user gesture, the hook reports not
+      // listening and the button is still there to press.
+      if (wantsDictation) startDictationRef.current();
     });
   }, []);
 

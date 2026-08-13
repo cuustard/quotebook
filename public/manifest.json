@@ -8,7 +8,10 @@
   "orientation": "portrait-primary",
   "background_color": "#1e1f22",
   "theme_color": "#1e1f22",
-  "categories": ["productivity", "lifestyle"],
+  "categories": [
+    "productivity",
+    "lifestyle"
+  ],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -35,14 +38,36 @@
       "short_name": "Capture",
       "description": "Capture a quote before you forget it",
       "url": "/quick",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Dictate a quote",
+      "short_name": "Dictate",
+      "description": "Open Quotebook already listening, and just say it",
+      "url": "/quick?dictate=1",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Inbox",
       "short_name": "Inbox",
       "description": "Review captures waiting to become quotes",
       "url": "/inbox",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ],
   "share_target": {
