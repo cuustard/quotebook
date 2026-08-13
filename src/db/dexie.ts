@@ -21,6 +21,7 @@ import type {
   Capture,
   FieldClock,
   InviteCode,
+  LocalEvent,
   Quote,
   QuoteLine,
   Quotebook,
@@ -40,6 +41,8 @@ export class QuotebookDB extends Dexie {
   members!: Table<QuotebookMember, string>;
   invites!: Table<InviteCode, string>;
   captures!: Table<Capture, string>;
+  /** Append-only audit / event-sourcing log, keyed by local sequence. */
+  events!: Table<LocalEvent, number>;
   meta!: Table<Meta, string>;
 
   constructor() {
@@ -125,6 +128,17 @@ export class QuotebookDB extends Dexie {
           if (typeof q.quote_context !== "string") q.quote_context = "";
         });
     });
+
+    // Append-only local event log (see LocalEvent in src/lib/types.ts).
+    // `++seq` makes the primary key an auto-incrementing local sequence, which
+    // is what gives a future event-sourced reconciler a deterministic replay
+    // order; the rest are indexes for the three ways it gets read — per row
+    // (audit trail), by time, and "what still needs shipping".
+    // No upgrade function: an empty log on existing installs is correct, since
+    // history that was never recorded cannot be invented.
+    this.version(5).stores({
+      events: "++seq, entity, entity_id, at, _synced, [entity+entity_id]",
+    });
   }
 }
 
@@ -167,6 +181,9 @@ export async function resetLocalData(): Promise<void> {
       // Captures hold raw user text — they must not outlive the account
       // that typed them on a shared browser.
       db.captures.clear(),
+      // The event log attributes changes to an actor; on a shared browser it
+      // is exactly the kind of trail that must not survive a sign-out.
+      db.events.clear(),
     ]);
     const keys = (await db.meta.toCollection().primaryKeys()) as string[];
     await db.meta.bulkDelete(keys.filter((k) => k.startsWith("cursor:")));

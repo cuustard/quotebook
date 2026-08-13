@@ -8,12 +8,15 @@
  */
 
 import { db } from "@/db/dexie";
+import { recordEvents, type EventInput } from "@/lib/events";
 import { nowIso, tick, tickToIso, uuid } from "@/lib/id";
+import { clockMax } from "@/lib/merge";
 import { getCurrentUserId } from "@/lib/session";
 import { requestSync } from "@/lib/sync";
 import { normalizeTags } from "@/lib/tags";
 import { MAX_CONTEXT, MAX_LINE_TEXT, MAX_QUOTE_CONTEXT } from "@/lib/types";
 import type {
+  EventEntity,
   Quote,
   QuoteLine,
   Quotebook,
@@ -55,6 +58,51 @@ function fresh<T extends Record<string, unknown>>(fields: T): T & SyncMeta {
   };
 }
 
+/**
+ * Describe a mutation for the event log.
+ *
+ * The tick is read back off the stamped record rather than threaded through
+ * from `stamp()`/`fresh()`: those already write it into the field clock, and
+ * re-deriving it keeps the log honest — the entry carries the tick the row
+ * actually got, not one a caller believed it would get.
+ */
+function evt(
+  entity: EventEntity,
+  row: SyncMeta & { id: string },
+  action: EventInput["action"],
+  fields?: string[],
+): EventInput {
+  return { entity, entity_id: row.id, action, fields, tick: clockMax(row) };
+}
+
+/** A soft-delete is a `deleted` field write; the action is what carries meaning. */
+function deleteEvt(entity: EventEntity, row: SyncMeta & { id: string }): EventInput {
+  return evt(entity, row, "delete");
+}
+
+/**
+ * Keys in `patch` whose value actually differs from `base`.
+ *
+ * `stamp()` deliberately advances the LWW clock for every key it is handed,
+ * changed or not — that is the write path's business. The audit log answers a
+ * different question ("what did this edit change?"), and inheriting the write
+ * path's over-reporting would make every save look like it rewrote the record.
+ * Arrays are compared by value, since `tags` is one and is otherwise always a
+ * fresh reference.
+ */
+function changedKeys<T extends object>(base: T, patch: Partial<T>): string[] {
+  return Object.keys(patch).filter((key) => {
+    const before = (base as Record<string, unknown>)[key];
+    const after = (patch as Record<string, unknown>)[key];
+    if (Array.isArray(before) && Array.isArray(after)) {
+      return (
+        before.length !== after.length || before.some((v, i) => v !== after[i])
+      );
+    }
+    return before !== after;
+  });
+}
+
 // =========================================================================
 // Quotebooks
 // =========================================================================
@@ -92,36 +140,45 @@ export async function ensurePrivateQuotebook(): Promise<Quotebook> {
   // Transactional so concurrent boots (React Strict Mode double-mounts the
   // Providers effect in dev) serialize on the read-then-create instead of
   // both seeing an empty table and each minting a private book.
-  const book = await db.transaction("rw", db.quotebooks, db.quotes, async () => {
-    const books = await db.quotebooks.toArray();
-    const existing = pickPrivateBook(books, userId);
-    if (existing) {
-      // Self-heal duplicates left by past races: retire any OTHER private
-      // book, but only if it holds no quotes — never delete content.
-      for (const b of books) {
-        if (b.is_private && !b.deleted && b.id !== existing.id) {
-          const quoteCount = await db.quotes
-            .where("quotebook_id")
-            .equals(b.id)
-            .count();
-          if (quoteCount === 0) {
-            await db.quotebooks.put(stamp(b, { deleted: true }));
+  const book = await db.transaction(
+    "rw",
+    db.quotebooks,
+    db.quotes,
+    db.events,
+    async () => {
+      const books = await db.quotebooks.toArray();
+      const existing = pickPrivateBook(books, userId);
+      if (existing) {
+        // Self-heal duplicates left by past races: retire any OTHER private
+        // book, but only if it holds no quotes — never delete content.
+        for (const b of books) {
+          if (b.is_private && !b.deleted && b.id !== existing.id) {
+            const quoteCount = await db.quotes
+              .where("quotebook_id")
+              .equals(b.id)
+              .count();
+            if (quoteCount === 0) {
+              const retired = stamp(b, { deleted: true });
+              await db.quotebooks.put(retired);
+              await recordEvents([deleteEvt("quotebook", retired)]);
+            }
           }
         }
+        return existing;
       }
-      return existing;
-    }
 
-    const created = fresh({
-      id: uuid(),
-      owner_id: userId,
-      name: GUEST_BOOK_NAME,
-      is_private: true,
-      created_at: nowIso(),
-    }) as Quotebook;
-    await db.quotebooks.put(created);
-    return created;
-  });
+      const created = fresh({
+        id: uuid(),
+        owner_id: userId,
+        name: GUEST_BOOK_NAME,
+        is_private: true,
+        created_at: nowIso(),
+      }) as Quotebook;
+      await db.quotebooks.put(created);
+      await recordEvents([evt("quotebook", created, "create")]);
+      return created;
+    },
+  );
   requestSync();
   return book;
 }
@@ -135,18 +192,25 @@ export async function createQuotebook(name: string): Promise<Quotebook> {
     is_private: false,
     created_at: nowIso(),
   }) as Quotebook;
-  await db.quotebooks.put(book);
 
-  // The owner is implicitly a member.
-  if (userId) {
-    await db.members.put({
-      id: uuid(),
-      quotebook_id: book.id,
-      user_id: userId,
-      joined_at: nowIso(),
-      _dirty: 1,
-    });
-  }
+  // Transactional so the book, its owner membership and the log entry either
+  // all land or none do — a book with no owner row is not a state worth
+  // being able to reach.
+  await db.transaction("rw", db.quotebooks, db.members, db.events, async () => {
+    await db.quotebooks.put(book);
+
+    // The owner is implicitly a member.
+    if (userId) {
+      await db.members.put({
+        id: uuid(),
+        quotebook_id: book.id,
+        user_id: userId,
+        joined_at: nowIso(),
+        _dirty: 1,
+      });
+    }
+    await recordEvents([evt("quotebook", book, "create")]);
+  });
   requestSync();
   return book;
 }
@@ -154,7 +218,11 @@ export async function createQuotebook(name: string): Promise<Quotebook> {
 export async function renameQuotebook(id: string, name: string): Promise<void> {
   const book = await db.quotebooks.get(id);
   if (!book) return;
-  await db.quotebooks.put(stamp(book, { name: name.trim() }));
+  await db.transaction("rw", db.quotebooks, db.events, async () => {
+    const renamed = stamp(book, { name: name.trim() });
+    await db.quotebooks.put(renamed);
+    await recordEvents([evt("quotebook", renamed, "update", ["name"])]);
+  });
   requestSync();
 }
 
@@ -166,20 +234,39 @@ export async function deleteQuotebook(id: string): Promise<void> {
   // Transactional and batched: this used to be a sequential put per quote plus
   // a per-quote line query (an N+1), and being outside a transaction meant an
   // interrupted delete could leave the book tombstoned with its quotes live.
-  await db.transaction("rw", db.quotebooks, db.quotes, db.quote_lines, async () => {
-    await db.quotebooks.put(stamp(book, { deleted: true }));
+  await db.transaction(
+    "rw",
+    db.quotebooks,
+    db.quotes,
+    db.quote_lines,
+    db.events,
+    async () => {
+      const tombstoned = stamp(book, { deleted: true });
+      await db.quotebooks.put(tombstoned);
 
-    const quotes = await db.quotes.where("quotebook_id").equals(id).toArray();
-    // Scan + filter rather than anyOf() over every quote id — see the note in
-    // getQuotesWithLines: per-key index seeks are far slower at this scale.
-    const wanted = new Set(quotes.map((q) => q.id));
-    const lines = (await db.quote_lines.toArray()).filter((l) =>
-      wanted.has(l.quote_id),
-    );
+      const quotes = await db.quotes.where("quotebook_id").equals(id).toArray();
+      // Scan + filter rather than anyOf() over every quote id — see the note in
+      // getQuotesWithLines: per-key index seeks are far slower at this scale.
+      const wanted = new Set(quotes.map((q) => q.id));
+      const lines = (await db.quote_lines.toArray()).filter((l) =>
+        wanted.has(l.quote_id),
+      );
 
-    await db.quotes.bulkPut(quotes.map((q) => stamp(q, { deleted: true })));
-    await db.quote_lines.bulkPut(lines.map((l) => stamp(l, { deleted: true })));
-  });
+      const deadQuotes = quotes.map((q) => stamp(q, { deleted: true }));
+      const deadLines = lines.map((l) => stamp(l, { deleted: true }));
+      await db.quotes.bulkPut(deadQuotes);
+      await db.quote_lines.bulkPut(deadLines);
+
+      // The cascade is logged row by row, not just as one book-level entry:
+      // an audit trail that only says "a book was deleted" cannot answer
+      // "what happened to this quote", which is the question actually asked.
+      await recordEvents([
+        deleteEvt("quotebook", tombstoned),
+        ...deadQuotes.map((q) => deleteEvt("quote", q)),
+        ...deadLines.map((l) => deleteEvt("quote_line", l)),
+      ]);
+    },
+  );
   requestSync();
 }
 
@@ -244,9 +331,13 @@ export async function createQuote(
     }) as QuoteLine,
   );
 
-  await db.transaction("rw", db.quotes, db.quote_lines, async () => {
+  await db.transaction("rw", db.quotes, db.quote_lines, db.events, async () => {
     await db.quotes.put(quote);
     await db.quote_lines.bulkPut(lines);
+    await recordEvents([
+      evt("quote", quote, "create"),
+      ...lines.map((l) => evt("quote_line", l, "create")),
+    ]);
   });
   requestSync();
   return quoteId;
@@ -266,16 +357,16 @@ export async function updateQuote(
   const quote = await db.quotes.get(quoteId);
   if (!quote) return;
 
-  await db.transaction("rw", db.quotes, db.quote_lines, async () => {
-    await db.quotes.put(
-      stamp(quote, {
-        quote_date: input.quote_date,
-        quote_time: input.quote_time,
-        quote_context: input.quote_context.trim().slice(0, MAX_QUOTE_CONTEXT),
-        tags: normalizeTags(input.tags),
-        version: quote.version + 1,
-      }),
-    );
+  await db.transaction("rw", db.quotes, db.quote_lines, db.events, async () => {
+    const quotePatch = {
+      quote_date: input.quote_date,
+      quote_time: input.quote_time,
+      quote_context: input.quote_context.trim().slice(0, MAX_QUOTE_CONTEXT),
+      tags: normalizeTags(input.tags),
+      version: quote.version + 1,
+    };
+    const updatedQuote = stamp(quote, quotePatch);
+    await db.quotes.put(updatedQuote);
 
     const existing = await db.quote_lines
       .where("quote_id")
@@ -287,39 +378,55 @@ export async function updateQuote(
     // Collect every line write, then flush once. Writing them one await at a
     // time held the transaction open across N round trips.
     const writes: QuoteLine[] = [];
+    // Report the fields whose values actually differ, minus `version`: it is a
+    // bookkeeping counter that increments on every save, so including it would
+    // make an edit that touched only a line look like it rewrote the quote.
+    // With it excluded, an empty list correctly means "the quote itself was
+    // untouched" and no entry is written at all.
+    const quoteChanges = changedKeys(quote, quotePatch).filter((k) => k !== "version");
+    const events: EventInput[] = quoteChanges.length
+      ? [evt("quote", updatedQuote, "update", quoteChanges)]
+      : [];
 
     for (let index = 0; index < input.lines.length; index++) {
       const line = input.lines[index];
       const prev = line.id ? existingById.get(line.id) : undefined;
       if (prev) {
         keptIds.add(prev.id);
-        writes.push(
-          stamp(prev, {
-            ...cleanLine(line),
-            order_index: index,
-            deleted: false,
-          }),
-        );
+        const linePatch = {
+          ...cleanLine(line),
+          order_index: index,
+          deleted: false,
+        };
+        const updatedLine = stamp(prev, linePatch);
+        writes.push(updatedLine);
+        const changed = changedKeys(prev, linePatch);
+        if (changed.length > 0) {
+          events.push(evt("quote_line", updatedLine, "update", changed));
+        }
       } else {
-        writes.push(
-          fresh({
-            id: line.id ?? uuid(),
-            quote_id: quoteId,
-            ...cleanLine(line),
-            order_index: index,
-          }) as QuoteLine,
-        );
+        const created = fresh({
+          id: line.id ?? uuid(),
+          quote_id: quoteId,
+          ...cleanLine(line),
+          order_index: index,
+        }) as QuoteLine;
+        writes.push(created);
+        events.push(evt("quote_line", created, "create"));
       }
     }
 
     // Tombstone lines the user removed.
     for (const prev of existing) {
       if (!keptIds.has(prev.id) && !prev.deleted) {
-        writes.push(stamp(prev, { deleted: true }));
+        const removed = stamp(prev, { deleted: true });
+        writes.push(removed);
+        events.push(deleteEvt("quote_line", removed));
       }
     }
 
     await db.quote_lines.bulkPut(writes);
+    await recordEvents(events);
   });
   requestSync();
 }
@@ -327,12 +434,18 @@ export async function updateQuote(
 export async function deleteQuote(quoteId: string): Promise<void> {
   const quote = await db.quotes.get(quoteId);
   if (!quote) return;
-  await db.transaction("rw", db.quotes, db.quote_lines, async () => {
-    await db.quotes.put(stamp(quote, { deleted: true }));
+  await db.transaction("rw", db.quotes, db.quote_lines, db.events, async () => {
+    const tombstoned = stamp(quote, { deleted: true });
+    await db.quotes.put(tombstoned);
     const lines = await db.quote_lines.where("quote_id").equals(quoteId).toArray();
     // One batched write rather than holding the transaction open across a
     // sequential put per line.
-    await db.quote_lines.bulkPut(lines.map((l) => stamp(l, { deleted: true })));
+    const deadLines = lines.map((l) => stamp(l, { deleted: true }));
+    await db.quote_lines.bulkPut(deadLines);
+    await recordEvents([
+      deleteEvt("quote", tombstoned),
+      ...deadLines.map((l) => deleteEvt("quote_line", l)),
+    ]);
   });
   requestSync();
 }

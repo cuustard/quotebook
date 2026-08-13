@@ -115,6 +115,64 @@ export interface Capture {
   attempted_at: string | null;
 }
 
+// --- Local event log -------------------------------------------------------
+
+/** Tables the event log can describe. */
+export type EventEntity = "quotebook" | "quote" | "quote_line";
+
+export type EventAction = "create" | "update" | "delete";
+
+/**
+ * One entry in the append-only local event log (`db.events`).
+ *
+ * The record tables already carry field-level LWW clocks, which is enough to
+ * MERGE two versions of a row but says nothing about how a row got there. This
+ * log is the missing half: an ordered, immutable account of what changed, who
+ * changed it and when.
+ *
+ * It exists now because three planned things all need it and none of them can
+ * bolt it on afterwards — an audit trail cannot be reconstructed from state it
+ * was never recording:
+ *   - audit logging: "who edited this quote, and when"
+ *   - event-sourced sync: ship `_synced === 0` entries as an ordered stream
+ *     instead of (or alongside) whole-row LWW upserts
+ *   - RBAC: attribute a change to an actor before deciding if it was allowed
+ *
+ * Entries are written in the SAME Dexie transaction as the mutation they
+ * describe, so the log can never disagree with the data.
+ */
+export interface LocalEvent {
+  /**
+   * Auto-incrementing local sequence — the total order of local mutations.
+   * Assigned by Dexie, so it is monotonic per device and gives an
+   * event-sourced reconciler a deterministic replay order.
+   */
+  seq?: number;
+  /** Stable global id, so an entry stays identifiable once shipped upstream. */
+  id: string;
+  entity: EventEntity;
+  /** Row the event is about. */
+  entity_id: string;
+  action: EventAction;
+  /**
+   * Field names touched. Deliberately not the values: the log is an audit
+   * trail, not a second copy of the database, and storing old values would
+   * quietly resurrect content the user soft-deleted.
+   */
+  fields: string[];
+  /** Signed-in user at the time; null in guest mode. */
+  actor_id: string | null;
+  /** ISO timestamp of the change. */
+  at: string;
+  /**
+   * The LWW tick stamped on the mutation itself, so an event can be lined up
+   * against the `field_updated_at` clock of the row it describes.
+   */
+  tick: number;
+  /** Local-only: 0 until the entry has been shipped to a server. */
+  _synced?: 0 | 1;
+}
+
 // --- Feed control value objects -------------------------------------------
 
 export type SortKey = "quote_date" | "created_at";
